@@ -18,6 +18,7 @@ const state = {
      qualquer outra aba, herdar o filtro aplicado em outra) */
   filtroCalculo: { busca: '', apenasComProducao: true, especialidade: 'TODOS', departamento: 'TODOS', detalheAberto: null },
   filtroSemanal: { semana: 'TODAS', departamento: 'TODOS' },
+  filtroDiretoria: { especialidade: 'TODOS', departamento: 'TODOS' },
 };
 
 /* dados carregados do backend (funcionarios/pesagens/frotas/periodo) */
@@ -127,7 +128,7 @@ function render() {
   const render_fn = { dados: renderDados, parametros: renderParametros, calculo: renderCalculo,
     semanal: renderSemanal, diretoria: renderDiretoria, extrato: renderExtrato }[state.view];
   $('#main').innerHTML = render_fn ? render_fn() : '';
-  const wire_fn = { dados: wireDados, parametros: wireParametros, calculo: wireCalculo, semanal: wireSemanal }[state.view];
+  const wire_fn = { dados: wireDados, parametros: wireParametros, calculo: wireCalculo, semanal: wireSemanal, diretoria: wireDiretoria }[state.view];
   if (wire_fn) wire_fn();
 }
 
@@ -241,7 +242,156 @@ function wireSemanal() {
   $('#btnExportarCsvSemanal').onclick = exportarCsvSemanal;
   $('#btnExportarSemanalPdf').onclick = () => window.print();
 }
-function renderDiretoria() { return placeholder('Painel diretoria'); }
+/* =============== aba: painel diretoria =============== */
+function resumoDiretoria() {
+  const f = state.filtroDiretoria;
+  const lista = (CALC ? CALC.lista : []).filter(k =>
+    k.viagens > 0 &&
+    (f.especialidade === 'TODOS' || k.espec === f.especialidade) &&
+    (f.departamento === 'TODOS' || (k.departamento || 'Não informado') === f.departamento)
+  );
+  const semanas = semanasDoPeriodo().map(s => ({ ...s, valor: 0, ton: 0 }));
+  const porEspec = {};
+  const tot = { n: 0, ton: 0, viagens: 0, gratif: 0, sal: 0, totalReceber: 0 };
+  let somaTeto = 0, abaixo = [], acimaTeto = 0;
+  for (const k of lista) {
+    tot.n++; tot.ton += k.ton; tot.viagens += k.viagens; tot.gratif += k.gratif; tot.sal += k.sal; tot.totalReceber += k.totalReceber;
+    somaTeto += k.teto || 0;
+    for (const s of semanas) {
+      const sem = k.semanas[String(s.idx)];
+      if (sem) { s.valor += sem.valor; s.ton += sem.ton; }
+    }
+    porEspec[k.espec] || (porEspec[k.espec] = { ton: 0, n: 0, gratif: 0, viagens: 0 });
+    const pe = porEspec[k.espec];
+    pe.ton += k.ton; pe.n++; pe.gratif += k.gratif; pe.viagens += k.viagens;
+    if (k.teto) {
+      if (k.atingPct < 0.7) abaixo.push(k);
+      if (k.atingPct > 1) acimaTeto++;
+    }
+  }
+  const maxSem = Math.max(1, ...semanas.map(s => s.valor));
+  return {
+    lista, porSem: semanas, porEspec, maxSem,
+    atingMedio: somaTeto ? tot.gratif / somaTeto : 0,
+    gratifMedia: tot.n ? tot.gratif / tot.n : 0,
+    nProd: tot.n, abaixo, acimaTeto, ...tot,
+  };
+}
+
+function renderDiretoria() {
+  if (!CALC) return placeholder('Painel diretoria');
+  const f = state.filtroDiretoria;
+  const xe = resumoDiretoria();
+  const top10 = xe.lista.slice(0, 10);
+  const maxGratifTop10 = Math.max(1, ...top10.map(k => k.gratif));
+  const departamentos = [...new Set((CALC.lista || []).map(k => k.departamento || 'Não informado'))].sort();
+  const especEntries = Object.entries(xe.porEspec).sort((a, b) => b[1].gratif - a[1].gratif);
+
+  return `
+    <div class="hero-dir">
+      <div>
+        <h2>Resumo executivo — Gratificação CTT</h2>
+        <div class="per">Motoristas e operadores · ${brDate(DADOS.periodo.inicio)} a ${brDate(DADOS.periodo.fim)} · ${xe.n} colaboradores · <span class="mono">${xe.viagens.toLocaleString('pt-BR')}</span> pesagens</div>
+        <div style="margin-top:10px"><span class="sigilo">🔒 Sem identificação nominal — referência por matrícula</span></div>
+        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+          <select id="dirEspec" class="no-print">
+            <option value="TODOS" ${f.especialidade === 'TODOS' ? 'selected' : ''}>Todas as especialidades</option>
+            <option value="CAMINHAO" ${f.especialidade === 'CAMINHAO' ? 'selected' : ''}>Caminhão canavieiro</option>
+            <option value="BATE-VOLTA" ${f.especialidade === 'BATE-VOLTA' ? 'selected' : ''}>Bate e volta</option>
+            <option value="COLHEDORA" ${f.especialidade === 'COLHEDORA' ? 'selected' : ''}>Operador colhedora</option>
+            <option value="TRANSBORDO" ${f.especialidade === 'TRANSBORDO' ? 'selected' : ''}>Operador transbordo</option>
+          </select>
+          <select id="dirDepto" class="no-print">
+            <option value="TODOS" ${f.departamento === 'TODOS' ? 'selected' : ''}>Todos os departamentos</option>
+            ${departamentos.map(d => `<option value="${esc(d)}" ${f.departamento === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:28px;align-items:center">
+        <div class="destaque"><div class="v">${numBR(xe.ton / 1000, 1)} mil t</div><div class="r">Cana transportada</div></div>
+        <div class="destaque"><div class="v">${brl(xe.gratif).replace(',00', '')}</div><div class="r">Gratificação apurada</div></div>
+        <button class="btn no-print" style="background:#F5C56B;color:#123D27" id="btnImprimirDiretoria">Imprimir / PDF</button>
+      </div>
+    </div>
+
+    <div class="kpis">
+      <div class="kpi"><div class="rot">Gratificação média (R$)</div><div class="val">${numBR(xe.gratifMedia, 0)}</div><div class="det">por colaborador com produção (${xe.nProd})</div></div>
+      <div class="kpi"><div class="rot">Atingimento médio do teto</div><div class="val">${numBR(xe.atingMedio * 100, 1)}%</div><div class="det">gratificação ÷ teto do nível</div></div>
+      <div class="kpi"><div class="rot">Acima de 100% do teto</div><div class="val" style="color:var(--ambar)">${xe.acimaTeto}</div><div class="det">colaboradores acima do teto</div></div>
+      <div class="kpi"><div class="rot">Custo médio / tonelada</div><div class="val">${xe.ton ? numBR(xe.gratif / xe.ton, 3) : '—'}</div><div class="det">R$ de gratificação por t</div></div>
+      <div class="kpi"><div class="rot">Salário + gratificação</div><div class="val">${numBR(xe.totalReceber / 1000, 0)}k</div><div class="det">folha estimada sem HE/DSR</div></div>
+      <div class="kpi"><div class="rot">Abaixo de 70% da meta</div><div class="val" style="color:${xe.abaixo.length ? 'var(--vermelho)' : 'var(--verde)'}">${xe.abaixo.length}</div><div class="det">colaboradores em atenção</div></div>
+    </div>
+
+    <div class="grade2">
+      <div class="cartao">
+        <h2>Evolução semanal da produção</h2>
+        <div class="dica">Gratificação de produção gerada por semana do período (R$ e toneladas).</div>
+        <div class="colunas">
+          ${xe.porSem.map(s => `
+            <div class="col">
+              <div class="v">${numBR(s.valor / 1000, 1)}k</div>
+              <i style="height:${xe.maxSem ? s.valor / xe.maxSem * 100 : 0}%"></i>
+              <div class="lab">${s.rotulo}<br>${numBR(s.ton / 1000, 1)} mil t</div>
+            </div>`).join('')}
+        </div>
+      </div>
+      <div class="cartao">
+        <h2>Por especialidade</h2>
+        <div class="dica">Gratificação total e volume por tipo de equipamento.</div>
+        <table>
+          <thead><tr><th>Especialidade</th><th class="num">Colab.</th><th class="num">Ton</th><th class="num">Viagens</th><th class="num">Gratif. (R$)</th><th class="num">R$/colab.</th></tr></thead>
+          <tbody>${especEntries.map(([espec, v]) => `
+            <tr><td>${ESPEC_LABEL[espec] || esc(espec)}</td><td class="num">${v.n}</td><td class="num">${numBR(v.ton, 0)}</td>
+              <td class="num">${v.viagens.toLocaleString('pt-BR')}</td><td class="num" style="font-weight:600">${numBR(v.gratif, 0)}</td>
+              <td class="num">${numBR(v.n ? v.gratif / v.n : 0, 0)}</td></tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="cartao">
+      <h2>Top 10 — maiores gratificações do período</h2>
+      <div class="dica">Colaboradores referenciados apenas pela matrícula. Barra âmbar = passou de 100% do teto da gratificação.</div>
+      ${top10.map(k => `
+        <div class="gbar">
+          <div class="grot"><b>${esc(k.mat)}</b> · ${ESPEC_LABEL[k.espec] || esc(k.espec)}</div>
+          <div class="trilho"><i class="${k.atingPct > 1 ? 'ouro' : ''}" style="width:${k.gratif / maxGratifTop10 * 100}%"></i></div>
+          <div class="valr">${brl(k.gratif)}</div>
+        </div>`).join('')}
+      ${!top10.length ? '<div style="color:var(--muted);padding:12px">Sem dados — importe as bases na aba Dados.</div>' : ''}
+    </div>
+
+    ${xe.abaixo.length > 0 ? `
+    <div class="cartao">
+      <h2>Pontos de atenção — abaixo de 70% do teto da gratificação</h2>
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>Matrícula</th><th>Espec.</th><th class="num">Dias</th><th class="num">Viagens</th><th class="num">Ton</th><th class="num">Gratif. (R$)</th><th>% Atingido</th></tr></thead>
+          <tbody>${[...xe.abaixo].sort((a, b) => a.atingPct - b.atingPct).slice(0, 15).map(k => `
+            <tr>
+              <td class="mono"><b>${esc(k.mat)}</b></td>
+              <td>${badgeEspec(k.espec)}</td>
+              <td class="num">${k.dias}</td>
+              <td class="num">${k.viagens}</td>
+              <td class="num">${numBR(k.ton, 0)}</td>
+              <td class="num">${numBR(k.gratif)}</td>
+              <td><div style="display:flex;align-items:center;gap:6px">
+                <div class="barra" style="width:70px"><i style="width:${Math.min(100, k.atingPct * 100)}%;background:var(--vermelho)"></i></div>
+                <span class="mono" style="font-size:11.5px">${numBR(k.atingPct * 100, 1)}%</span>
+              </div></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>` : ''}`;
+}
+function wireDiretoria() {
+  const f = state.filtroDiretoria;
+  $('#dirEspec').onchange = e => { f.especialidade = e.target.value; render(); };
+  $('#dirDepto').onchange = e => { f.departamento = e.target.value; render(); };
+  $('#btnImprimirDiretoria').onclick = () => window.print();
+}
 function renderExtrato() { return placeholder('Extrato colaborador'); }
 
 /* =============== aba: parametros =============== */
