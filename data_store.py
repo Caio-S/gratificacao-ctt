@@ -8,7 +8,8 @@ _state = {
     "pesagens": [],
     "frotas": [],
     "parametros": None,  # populado em fase 3 com os valores padrao
-    "periodo": {"inicio": None, "fim": None},
+    "periodo": {"inicio": "2026-06-16", "fim": "2026-07-15"},  # mesmo padrao do artefato original
+    "dias_base": 25,
 }
 
 
@@ -50,6 +51,14 @@ def get_periodo():
 
 def set_periodo(inicio, fim):
     _state["periodo"] = {"inicio": inicio, "fim": fim}
+
+
+def get_dias_base():
+    return _state["dias_base"]
+
+
+def set_dias_base(dias):
+    _state["dias_base"] = dias
 
 
 def limpar_tudo():
