@@ -53,7 +53,7 @@ input[type=number]{font-family:'IBM Plex Mono';width:90px}
 .aviso.ok{background:#EAF3EC;border-color:#BFDCC8;color:#1B4D31}
 .aviso.erro{background:#F8ECEA;border-color:#E4C0B9;color:#7C2D1F}
 .aviso.alerta{background:#FBF3E3;border-color:#EAD3A0;color:#8A5A12}
-.zona{border:2px dashed var(--linha);border-radius:6px;padding:22px;text-align:center;color:var(--muted);cursor:pointer;background:#FBFCFA}
+.zona{display:block;margin-top:10px;border:2px dashed var(--linha);border-radius:6px;padding:22px;text-align:center;color:var(--muted);cursor:pointer;background:#FBFCFA}
 .zona:hover{border-color:var(--verde);color:var(--verde-esc)}
 .zona b{color:var(--ink)}
 .grade2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
