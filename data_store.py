@@ -3,6 +3,8 @@ some ao reiniciar o servidor). Pensada pra depois virar consultas a um banco
 real sem precisar mexer nas rotas do app.py nem no frontend - só trocar as
 funcoes daqui."""
 
+import calculo_defaults
+
 _state = {
     "funcionarios": [],
     "pesagens": [],
@@ -38,6 +40,8 @@ def set_frotas(lista):
 
 
 def get_parametros():
+    if _state["parametros"] is None:
+        _state["parametros"] = calculo_defaults.parametros_padrao()
     return _state["parametros"]
 
 

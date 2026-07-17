@@ -3,6 +3,7 @@ from datetime import date
 import openpyxl
 from flask import Flask, jsonify, render_template, request
 
+import calculo_defaults
 import data_store
 import parsers
 from utils import parse_data
@@ -142,6 +143,26 @@ def set_periodo():
     if dias_base:
         data_store.set_dias_base(int(dias_base))
     return jsonify({"periodo": data_store.get_periodo(), "diasBase": data_store.get_dias_base()})
+
+
+@app.route("/api/parametros", methods=["GET"])
+def get_parametros():
+    return jsonify(data_store.get_parametros())
+
+
+@app.route("/api/parametros", methods=["PUT"])
+def set_parametros():
+    payload = request.get_json(force=True)
+    data_store.set_parametros(payload)
+    return jsonify(data_store.get_parametros())
+
+
+@app.route("/api/parametros/restaurar-faixas", methods=["POST"])
+def restaurar_faixas():
+    atual = data_store.get_parametros()
+    atual.update(calculo_defaults.faixas_padrao())
+    data_store.set_parametros(atual)
+    return jsonify(atual)
 
 
 if __name__ == "__main__":
