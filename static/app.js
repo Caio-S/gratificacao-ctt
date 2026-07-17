@@ -6,6 +6,7 @@ const brl = n => (Number(n) || 0).toLocaleString('pt-BR', { style: 'currency', c
 const numBR = (n, casas = 2) => (Number(n) || 0).toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
 const norm = s => String(s ?? '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toUpperCase().trim();
 const brDate = iso => iso ? iso.split('-').reverse().join('/') : '—';
+const dataCurta = d => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
 
 /* =============== estado =============== */
 const state = {
@@ -16,6 +17,7 @@ const state = {
      filtro global compartilhado entre abas (evita o painel da diretoria, ou
      qualquer outra aba, herdar o filtro aplicado em outra) */
   filtroCalculo: { busca: '', apenasComProducao: true, especialidade: 'TODOS', departamento: 'TODOS', detalheAberto: null },
+  filtroSemanal: { semana: 'TODAS', departamento: 'TODOS' },
 };
 
 /* dados carregados do backend (funcionarios/pesagens/frotas/periodo) */
@@ -105,12 +107,13 @@ function showAviso(tipo, txt) {
 }
 
 /* =============== navegacao =============== */
+const VIEWS_QUE_USAM_CALCULO = new Set(['calculo', 'semanal', 'diretoria', 'extrato']);
 async function setView(v) {
   state.view = v;
   document.querySelectorAll('.aba').forEach(b => b.classList.toggle('ativa', b.dataset.v === v));
   showAviso(null);
   $('#corpo').classList.toggle('largo', v === 'calculo');
-  if (v === 'calculo') {
+  if (VIEWS_QUE_USAM_CALCULO.has(v)) {
     $('#main').innerHTML = '<div class="cartao"><div class="dica">Calculando…</div></div>';
     try { await carregarCalculo(); } catch (e) { showAviso('erro', 'Falha ao calcular: ' + e.message); }
   }
@@ -124,14 +127,120 @@ function render() {
   const render_fn = { dados: renderDados, parametros: renderParametros, calculo: renderCalculo,
     semanal: renderSemanal, diretoria: renderDiretoria, extrato: renderExtrato }[state.view];
   $('#main').innerHTML = render_fn ? render_fn() : '';
-  const wire_fn = { dados: wireDados, parametros: wireParametros, calculo: wireCalculo }[state.view];
+  const wire_fn = { dados: wireDados, parametros: wireParametros, calculo: wireCalculo, semanal: wireSemanal }[state.view];
   if (wire_fn) wire_fn();
 }
 
 function placeholder(titulo) {
   return `<div class="cartao"><h2>${esc(titulo)}</h2><div class="dica">Em construção — chega nas próximas fases.</div></div>`;
 }
-function renderSemanal() { return placeholder('Relatório semanal'); }
+/* =============== aba: relatorio semanal =============== */
+function semanasDoPeriodo() {
+  const inicio = new Date(DADOS.periodo.inicio + 'T00:00:00');
+  const fim = new Date(DADOS.periodo.fim + 'T00:00:00');
+  const semanas = [];
+  for (let idx = 0; idx < (CALC ? CALC.nSem : 0); idx++) {
+    const ini = new Date(inicio.getTime() + idx * 7 * 86400000);
+    const fimSem = new Date(Math.min(fim.getTime(), ini.getTime() + 6 * 86400000));
+    semanas.push({ idx, rotulo: `Sem ${idx + 1}`, faixa: `${dataCurta(ini)}–${dataCurta(fimSem)}` });
+  }
+  return semanas;
+}
+function diasDecorridos() {
+  const diasTotais = diasNoPeriodo(DADOS.periodo.inicio, DADOS.periodo.fim);
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const inicio = new Date(DADOS.periodo.inicio + 'T00:00:00');
+  const fim = new Date(DADOS.periodo.fim + 'T00:00:00');
+  if (hoje < inicio) return 0;
+  if (hoje > fim) return diasTotais;
+  return Math.round((hoje - inicio) / 86400000) + 1;
+}
+
+function exportarCsvSemanal() {
+  const yt = semanasDoPeriodo();
+  const cabecalho = ['Matrícula', ...(state.exibirNomes ? ['Nome'] : []), 'Departamento', 'Especialidade',
+    ...yt.map(s => `${s.rotulo} R$`), 'Ton total', 'Viagens', 'Salário base R$', 'Gratificação R$', 'Teto gratif. R$', '% Atingido', 'Total a receber R$'];
+  const linhas = [cabecalho];
+  for (const k of (CALC ? CALC.lista : [])) {
+    linhas.push([k.mat, ...(state.exibirNomes ? [k.nome] : []), k.departamento || 'Não informado', k.espec,
+      ...yt.map(s => numBR(k.semanas[String(s.idx)]?.valor || 0)), numBR(k.ton), k.viagens, numBR(k.sal), numBR(k.gratif), numBR(k.teto), numBR(k.atingPct * 100, 1) + '%', numBR(k.totalReceber)]);
+  }
+  const csv = linhas.map(l => l.map(v => `"${v}"`).join(';')).join('\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `gratificacao_semanal_${DADOS.periodo.inicio}_a_${DADOS.periodo.fim}.csv`;
+  a.click();
+}
+
+function renderSemanal() {
+  if (!CALC) return placeholder('Relatório semanal');
+  const f = state.filtroSemanal;
+  const todasSemanas = semanasDoPeriodo();
+  const semanasVisiveis = f.semana === 'TODAS' ? todasSemanas : todasSemanas.filter(s => String(s.idx) === f.semana);
+  const departamentos = [...new Set(CALC.lista.map(k => k.departamento || 'Não informado'))].sort();
+  const lista = CALC.lista.filter(k => k.viagens > 0 && (f.departamento === 'TODOS' || (k.departamento || 'Não informado') === f.departamento));
+  const diasTotais = diasNoPeriodo(DADOS.periodo.inicio, DADOS.periodo.fim);
+  const decorridos = diasDecorridos();
+  const baseProjecao = decorridos > 0 ? decorridos : diasTotais;
+
+  const linhas = lista.map(k => {
+    const projecao = decorridos > 0 && decorridos < diasTotais ? k['prodR$'] / baseProjecao * diasTotais : k['prodR$'];
+    return `
+      <tr>
+        <td class="mono">${esc(k.mat)}</td>
+        <td>${state.exibirNomes ? esc(k.nome) : `Colaborador ${esc(k.mat)}`}</td>
+        <td class="tag-sem">${esc(k.departamento || 'Não informado')}</td>
+        <td>${badgeEspec(k.espec)}</td>
+        ${semanasVisiveis.map(s => {
+          const sem = k.semanas[String(s.idx)];
+          return `<td class="num">${sem ? `${numBR(sem.valor)}<div class="tag-sem">${numBR(sem.ton, 0)} t · ${sem.viagens} vg</div>` : '<span style="color:var(--muted)">—</span>'}</td>`;
+        }).join('')}
+        <td class="num" style="font-weight:600">${numBR(k['prodR$'])}</td>
+        <td class="num">${numBR(k.ton, 0)}</td>
+        <td class="num" style="color:${projecao >= k.teto ? 'var(--verde)' : 'var(--ambar)'};font-weight:600">${numBR(projecao)}<div class="tag-sem">${numBR(k.teto ? projecao / k.teto * 100 : 0, 1)}% do teto</div></td>
+      </tr>`;
+  }).join('');
+
+  return `
+    <div class="cartao">
+      <div class="linha-form" style="justify-content:space-between">
+        <div>
+          <h2 style="margin:0">Acompanhamento semanal</h2>
+          <div class="dica" style="margin:4px 0 0">Quanto cada colaborador já produziu e ganhou por semana do período (${brDate(DADOS.periodo.inicio)} a ${brDate(DADOS.periodo.fim)}). A projeção estende o ritmo atual até o fim do período.</div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <select id="semSemana">
+            <option value="TODAS" ${f.semana === 'TODAS' ? 'selected' : ''}>Todas as semanas</option>
+            ${todasSemanas.map(s => `<option value="${s.idx}" ${f.semana === String(s.idx) ? 'selected' : ''}>${s.rotulo} · ${s.faixa}</option>`).join('')}
+          </select>
+          <select id="semDepto">
+            <option value="TODOS" ${f.departamento === 'TODOS' ? 'selected' : ''}>Todos os departamentos</option>
+            ${departamentos.map(d => `<option value="${esc(d)}" ${f.departamento === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}
+          </select>
+          <button class="btn" id="btnExportarCsvSemanal">Exportar CSV</button>
+          <button class="btn no-print" id="btnExportarSemanalPdf">Exportar PDF</button>
+        </div>
+      </div>
+      <div class="scroll-x">
+        <table>
+          <thead><tr>
+            <th>Mat.</th><th>Colaborador</th><th>Departamento</th><th>Espec.</th>
+            ${semanasVisiveis.map(s => `<th class="num">${s.rotulo}<div class="tag-sem">${s.faixa}</div></th>`).join('')}
+            <th class="num">Acum. (R$)</th><th class="num">Ton acum.</th><th class="num">Projeção fim (R$)</th>
+          </tr></thead>
+          <tbody>${linhas || `<tr><td colspan="${7 + semanasVisiveis.length}" style="text-align:center;padding:24px;color:var(--muted)">Sem dados no período.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+function wireSemanal() {
+  const f = state.filtroSemanal;
+  $('#semSemana').onchange = e => { f.semana = e.target.value; render(); };
+  $('#semDepto').onchange = e => { f.departamento = e.target.value; render(); };
+  $('#btnExportarCsvSemanal').onclick = exportarCsvSemanal;
+  $('#btnExportarSemanalPdf').onclick = () => window.print();
+}
 function renderDiretoria() { return placeholder('Painel diretoria'); }
 function renderExtrato() { return placeholder('Extrato colaborador'); }
 
