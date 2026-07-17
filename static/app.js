@@ -175,6 +175,17 @@ function exportarCsvSemanal() {
   a.click();
 }
 
+function acumuladosSemana(k, nSem) {
+  const acc = [];
+  let valorAcum = 0, tonAcum = 0;
+  for (let idx = 0; idx < nSem; idx++) {
+    const sem = k.semanas[String(idx)];
+    if (sem) { valorAcum += sem.valor; tonAcum += sem.ton; }
+    acc.push({ valorAcum, tonAcum });
+  }
+  return acc;
+}
+
 function renderSemanal() {
   if (!CALC) return placeholder('Relatório semanal');
   const f = state.filtroSemanal;
@@ -188,6 +199,7 @@ function renderSemanal() {
 
   const linhas = lista.map(k => {
     const projecao = decorridos > 0 && decorridos < diasTotais ? k['prodR$'] / baseProjecao * diasTotais : k['prodR$'];
+    const acc = acumuladosSemana(k, CALC.nSem);
     return `
       <tr>
         <td class="mono">${esc(k.mat)}</td>
@@ -195,8 +207,10 @@ function renderSemanal() {
         <td class="tag-sem">${esc(k.departamento || 'Não informado')}</td>
         <td>${badgeEspec(k.espec)}</td>
         ${semanasVisiveis.map(s => {
-          const sem = k.semanas[String(s.idx)];
-          return `<td class="num">${sem ? `${numBR(sem.valor)}<div class="tag-sem">${numBR(sem.ton, 0)} t · ${sem.viagens} vg</div>` : '<span style="color:var(--muted)">—</span>'}</td>`;
+          const a = acc[s.idx];
+          if (!a || (a.valorAcum === 0 && a.tonAcum === 0)) return '<td class="num"><span style="color:var(--muted)">—</span></td>';
+          const pct = k.teto ? a.valorAcum / k.teto * 100 : 0;
+          return `<td class="num"><span style="font-weight:600${pct > 100 ? ';color:var(--ambar)' : ''}">${numBR(pct, 1)}%</span><div class="tag-sem">${numBR(a.tonAcum, 0)} t</div></td>`;
         }).join('')}
         <td class="num" style="font-weight:600">${numBR(k['prodR$'])}</td>
         <td class="num">${numBR(k.ton, 0)}</td>
@@ -209,7 +223,7 @@ function renderSemanal() {
       <div class="linha-form" style="justify-content:space-between">
         <div>
           <h2 style="margin:0">Acompanhamento semanal</h2>
-          <div class="dica" style="margin:4px 0 0">Quanto cada colaborador já produziu e ganhou por semana do período (${brDate(DADOS.periodo.inicio)} a ${brDate(DADOS.periodo.fim)}). A projeção estende o ritmo atual até o fim do período.</div>
+          <div class="dica" style="margin:4px 0 0">Progresso acumulado de toneladas e % da gratificação atingida a cada semana do período (${brDate(DADOS.periodo.inicio)} a ${brDate(DADOS.periodo.fim)}). A projeção estende o ritmo atual até o fim do período.</div>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
           <select id="semSemana">
@@ -786,7 +800,7 @@ function linhaCalculo(k) {
   const aberto = f.detalheAberto === k.mat;
   const admissao = k.admissao ? brDate(k.admissao) : '—';
   const linhaPrincipal = `
-    <tr class="linha-calc" data-row-mat="${esc(k.mat)}" style="cursor:pointer" title="Clique para abrir o extrato do colaborador">
+    <tr class="linha-calc">
       <td class="mono">${esc(k.mat)}</td>
       <td>${state.exibirNomes ? esc(k.nome) : `Colaborador ${esc(k.mat)}`}<div class="tag-sem">${esc(k.funcao || '')}</div></td>
       <td class="tag-sem">${esc(k.departamento || 'Não informado')}</td>
@@ -807,6 +821,7 @@ function linhaCalculo(k) {
         <span class="mono" style="font-size:11.5px;font-weight:${k.atingPct > 1 ? 700 : 400}${k.atingPct > 1 ? ';color:var(--ambar)' : ''}">${numBR(k.atingPct * 100, 1)}%</span>
       </div></td>
       <td class="num" style="font-weight:600">${numBR(k.totalReceber)}</td>
+      <td><button type="button" class="btn peq sec" data-extrato="${esc(k.mat)}" title="Abrir extrato do colaborador">📄 Extrato</button></td>
     </tr>`;
   if (!aberto) return linhaPrincipal;
   const mapaFrotas = new Map((DADOS.frotas || []).map(fr => [String(fr.frota), fr]));
@@ -826,7 +841,7 @@ function linhaCalculo(k) {
       }).join('')
     : '<span class="tag-sem">Sem frota registrada nas pesagens.</span>';
   return linhaPrincipal + `
-    <tr class="linha-frotas"><td colspan="15"><div class="frotas-box">${corpoDetalhe}</div></td></tr>`;
+    <tr class="linha-frotas"><td colspan="16"><div class="frotas-box">${corpoDetalhe}</div></td></tr>`;
 }
 
 function tabelaCalculo(lista) {
@@ -840,7 +855,7 @@ function tabelaCalculo(lista) {
           <th>Mat.</th><th>Colaborador</th><th>Departamento</th><th>Admissão</th><th>Espec.</th>
           <th class="num">Dias</th><th class="num">Viagens</th><th class="num">Ton</th><th class="num">Km méd.</th>
           <th>Frotas / disponib.</th><th class="num">Salário base</th><th class="num">Gratificação (R$)</th>
-          <th class="num">Teto (R$)</th><th>% Atingido</th><th class="num">Total (R$)</th>
+          <th class="num">Teto (R$)</th><th>% Atingido</th><th class="num">Total (R$)</th><th>Ações</th>
         </tr></thead>
         <tbody>${lista.map(linhaCalculo).join('')}</tbody>
       </table>
@@ -927,8 +942,12 @@ function wireCalculo() {
       render();
     };
   });
-  $('#main').querySelectorAll('[data-row-mat]').forEach(tr => {
-    tr.onclick = () => { state.extratoMat = tr.dataset.rowMat; setView('extrato'); };
+  $('#main').querySelectorAll('[data-extrato]').forEach(btn => {
+    btn.onclick = e => {
+      e.stopPropagation();
+      state.extratoMat = btn.dataset.extrato;
+      setView('extrato');
+    };
   });
   const btnPdf = $('#btnExportarCalculoPdf');
   if (btnPdf) btnPdf.onclick = () => window.print();
