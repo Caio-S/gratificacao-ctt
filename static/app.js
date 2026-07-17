@@ -13,6 +13,7 @@ const state = {
   view: 'dados',
   exibirNomes: false,
   extratoMat: null,
+  extratoSemanaAberta: null,
   /* cada aba com filtro proprio tem seu objeto isolado — nao ha estado de
      filtro global compartilhado entre abas (evita o painel da diretoria, ou
      qualquer outra aba, herdar o filtro aplicado em outra) */
@@ -128,7 +129,7 @@ function render() {
   const render_fn = { dados: renderDados, parametros: renderParametros, calculo: renderCalculo,
     semanal: renderSemanal, diretoria: renderDiretoria, extrato: renderExtrato }[state.view];
   $('#main').innerHTML = render_fn ? render_fn() : '';
-  const wire_fn = { dados: wireDados, parametros: wireParametros, calculo: wireCalculo, semanal: wireSemanal, diretoria: wireDiretoria }[state.view];
+  const wire_fn = { dados: wireDados, parametros: wireParametros, calculo: wireCalculo, semanal: wireSemanal, diretoria: wireDiretoria, extrato: wireExtrato }[state.view];
   if (wire_fn) wire_fn();
 }
 
@@ -392,7 +393,199 @@ function wireDiretoria() {
   $('#dirDepto').onchange = e => { f.departamento = e.target.value; render(); };
   $('#btnImprimirDiretoria').onclick = () => window.print();
 }
-function renderExtrato() { return placeholder('Extrato colaborador'); }
+/* =============== aba: extrato colaborador =============== */
+/* Rk/Ck: tabela de referencia de ton/dia por faixa de km (so informativa, nao
+   editavel em Parametros — usada apenas na coluna "Ton/dia padrão" do detalhe
+   diario do extrato). Portada fielmente do artefato original. */
+const _TAXAS_TON_REF = [565.7, 485.7, 425.5, 378.5, 340.9, 310.1, 284.4, 262.7, 244, 227.8, 213.6, 201.1, 190, 180, 171, 162.9, 155.5, 148.8, 142.6, 136.9, 131.7, 126.8, 122.3, 118.1, 114.1];
+const _TAXAS_TON_REF_BV = [1350, 981.8, 771.4, 635.3, 540, 469.6, 415.4, 372.4, 337.5, 308.6, 284.2, 263.4, 245.5, 229.8, 216, 203.8, 192.9, 183.1, 174.2, 166.2, 158.8, 152.1, 145.9, 140.3, 140.3];
+const TABELA_TON_CANAVIEIRO = _TAXAS_TON_REF.map((v, i) => ({ ini: i * 5 + 1, fim: i * 5 + 5, ton: v }));
+const TABELA_TON_BV = _TAXAS_TON_REF_BV.map((v, i) => ({ ini: i * 5 + 1, fim: i * 5 + 5, ton: v }));
+function tonReferencia(km, tabelaNome) {
+  const kmArred = Math.round(km);
+  const tabela = tabelaNome === 'bv' ? TABELA_TON_BV : TABELA_TON_CANAVIEIRO;
+  const banda = tabela.find(b => kmArred >= b.ini && kmArred <= b.fim);
+  if (banda) return banda.ton;
+  return kmArred > tabela[tabela.length - 1].fim ? tabela[tabela.length - 1].ton : tabela[0].ton;
+}
+
+function renderExtrato() {
+  if (!CALC) return placeholder('Extrato colaborador');
+  const pe = CALC.lista.filter(k => k.viagens > 0);
+  const me = pe.find(k => k.mat === state.extratoMat) || pe[0];
+  if (!me) {
+    return `<div class="cartao"><h2>Extrato do colaborador</h2><div class="dica">Sem dados — importe as bases ou carregue a demonstração na aba Dados.</div></div>`;
+  }
+  const especCfg = (PARAMS.especialidades || []).find(e => e.chave === me.espec) || {};
+  const tabelaNome = especCfg.tabela || 'canavieiro';
+  const referenciaDia = km => me.espec === 'COLHEDORA' ? PARAMS.tetoColhedora.metaDia
+    : me.espec === 'TRANSBORDO' ? PARAMS.tetoTransbordo.metaDia
+    : tonReferencia(km, tabelaNome);
+  const especLabelFull = { CAMINHAO: 'Caminhão canavieiro', 'BATE-VOLTA': 'Caminhão bate e volta', COLHEDORA: 'Colhedora de cana', TRANSBORDO: 'Trator transbordo' }[me.espec] || me.espec;
+  const producaoBruta = me['prodR$'];
+  const faltaTeto = Math.max(0, me.teto - me.gratif);
+  const semanas = semanasDoPeriodo();
+  const maxSemValor = Math.max(1, ...semanas.map(s => (me.semanas[String(s.idx)] || {}).valor || 0));
+  let acumulado = 0;
+  const semanasAcum = semanas.map(s => {
+    const w = me.semanas[String(s.idx)];
+    acumulado += w ? w.valor : 0;
+    return { ...s, w, acum: acumulado };
+  });
+  const pctGratifDoTotal = me.totalReceber > 0 ? me.gratif / me.totalReceber * 100 : 0;
+  const diasBase = DADOS.diasBase;
+
+  const semanaAberta = semanasAcum.find(s => s.idx === state.extratoSemanaAberta);
+
+  const modal = semanaAberta ? (() => {
+    const diasEntries = Object.entries(semanaAberta.w.dias || {}).sort((a, b) => a[0] < b[0] ? -1 : 1);
+    const totalW = semanaAberta.w;
+    const linhasDias = diasEntries.map(([iso, d]) => {
+      const raioMed = d.viagens ? d.km / d.viagens : 0;
+      return `
+        <tr>
+          <td>${dataCurta(new Date(iso + 'T00:00:00'))}</td>
+          <td class="num">${d.viagens}</td>
+          <td class="num">${d.viagens ? numBR(raioMed, 0) : '—'}</td>
+          <td class="num">${numBR(d.ton, 1)}</td>
+          <td class="num">${d.ton ? numBR(d.valor / d.ton, 4) : '—'}</td>
+          <td class="num" style="font-weight:600">${numBR(d.valor)}</td>
+          <td class="num tag-sem">${d.viagens ? numBR(referenciaDia(raioMed), 0) : '—'}</td>
+        </tr>`;
+    }).join('');
+    const raioMedTotal = totalW.viagens ? totalW.km / totalW.viagens : 0;
+    return `
+      <div class="modal-ov no-print" id="extratoModalOv">
+        <div class="modal-box largo" id="extratoModalBox">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <h3>Período de apuração: ${semanaAberta.faixa} · ${semanaAberta.rotulo}</h3>
+            <button class="modal-fecha" id="extratoModalFechar">×</button>
+          </div>
+          <div class="dica">Detalhe diário de viagens, raio médio e toneladas carregadas na semana. Validação: R$/t unitário × toneladas = valor do dia. "Ton/dia padrão" é o valor esperado para o raio do dia, conforme a tabela de referência de precificação.</div>
+          <div class="scroll-x">
+            <table>
+              <thead><tr><th>Dia</th><th class="num">Viagens</th><th class="num">Raio méd. (km)</th><th class="num">Toneladas</th><th class="num">R$/t unitário</th><th class="num">Valor (R$)</th><th class="num">Ton/dia padrão</th></tr></thead>
+              <tbody>
+                ${linhasDias}
+                <tr style="font-weight:600;border-top:2px solid var(--verde)">
+                  <td>Total</td>
+                  <td class="num">${totalW.viagens}</td>
+                  <td class="num">${totalW.viagens ? numBR(raioMedTotal, 0) : '—'}</td>
+                  <td class="num">${numBR(totalW.ton, 1)}</td>
+                  <td class="num">${totalW.ton ? numBR(totalW.valor / totalW.ton, 4) : '—'}</td>
+                  <td class="num">${numBR(totalW.valor)}</td>
+                  <td class="num tag-sem">${totalW.viagens ? numBR(referenciaDia(raioMedTotal), 0) : '—'}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>`;
+  })() : '';
+
+  return `
+    <div class="linha-form no-print" style="justify-content:space-between">
+      <div class="campo">
+        <label>Colaborador (matrícula)</label>
+        <select id="extratoSelect" style="min-width:260px">
+          ${pe.map(k => `<option value="${esc(k.mat)}" ${k.mat === me.mat ? 'selected' : ''}>${esc(k.mat)}${state.exibirNomes ? ' — ' + esc(k.nome) : ''} · ${ESPEC_LABEL[k.espec] || esc(k.espec)}</option>`).join('')}
+        </select>
+      </div>
+      <button class="btn" id="btnImprimirExtrato">Imprimir extrato / PDF</button>
+    </div>
+
+    <div class="cartao">
+      <div class="recibo-topo">
+        <div>
+          <div class="idc">Matrícula ${esc(me.mat)}</div>
+          ${state.exibirNomes ? `<div style="font-weight:600;margin-top:2px">${esc(me.nome)}</div>` : ''}
+          <div class="tag-sem" style="margin-top:4px">${esc(especLabelFull)}${me.funcao ? ' · ' + esc(me.funcao) : ''}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-family:'Barlow Condensed';font-weight:700;font-size:20px;color:var(--verde-esc);text-transform:uppercase;letter-spacing:.6px">Extrato de gratificação</div>
+          <div class="tag-sem">Período ${brDate(DADOS.periodo.inicio)} a ${brDate(DADOS.periodo.fim)} · ${me.dias} de ${diasBase} dias trabalhados (base prorata)</div>
+        </div>
+      </div>
+      <div class="comp">
+        <div class="bloco">
+          <div class="r">Gratificação de produção</div>
+          <div class="v">${brl(me.gratif)}</div>
+          <div class="d">${numBR(me.ton, 1)} t em ${me.viagens} pesagens${me.kmMed ? ` · raio méd. ${numBR(me.kmMed, 0)} km` : ''}</div>
+          <div class="d">${numBR(producaoBruta)} produzido${me.dias < diasBase ? ` × ${me.dias}/${diasBase} dias` : ''}${PARAMS.aplicarTeto && producaoBruta > me.teto ? ' · travado no teto' : ''}</div>
+        </div>
+        <div class="bloco">
+          <div class="r">Teto da gratificação — ${brl(me.teto)}</div>
+          <div class="v" style="color:${me.atingPct >= 1 ? 'var(--ambar)' : 'var(--verde-esc)'}">${numBR(me.atingPct * 100, 1)}%</div>
+          <div class="barra" style="height:10px;margin:4px 0 6px"><i class="${me.atingPct > 1 ? 'acima' : ''}" style="width:${Math.min(100, me.atingPct * 100)}%"></i></div>
+          ${me.atingPct >= 1
+            ? `<div class="d" style="color:var(--ambar);font-weight:600">Passou do teto em ${brl(me.gratif - me.teto)}</div>`
+            : `<div class="d">Faltam ${brl(faltaTeto)} para 100% do teto</div>`}
+        </div>
+        <div class="bloco total">
+          <div class="r">Total a receber (estimado)</div>
+          <div class="v">${brl(me.totalReceber)}</div>
+          <div class="faixa-comp">
+            <i style="width:${100 - pctGratifDoTotal}%;background:#7FB08F" title="Salário base"></i>
+            <i style="width:${pctGratifDoTotal}%;background:#F5C56B" title="Gratificação"></i>
+          </div>
+          <div class="d">▮ Salário base ${brl(me.sal)} · ▮ Gratificação ${brl(me.gratif)}</div>
+          <div class="d">Não inclui horas extras e DSR</div>
+        </div>
+      </div>
+
+      <h2 style="margin-top:6px">Semana a semana</h2>
+      <div class="dica">Quanto foi produzido e ganho em cada semana do período, com o acumulado — para acompanhar o ritmo até o fechamento.</div>
+      <div class="colunas" style="height:100px;max-width:560px">
+        ${semanasAcum.map(s => `
+          <div class="col">
+            <div class="v">${s.w ? numBR(s.w.valor, 0) : '—'}</div>
+            <i style="height:${((s.w ? s.w.valor : 0) / maxSemValor * 100)}%;background:var(--ambar)"></i>
+            <div class="lab">${s.rotulo}</div>
+          </div>`).join('')}
+      </div>
+      <div class="scroll-x" style="margin-top:10px">
+        <table>
+          <thead><tr>
+            <th>Semana</th><th>Período</th><th class="num">Viagens</th><th class="num">Toneladas</th><th class="num">Km méd.</th>
+            <th class="num">Produção da semana (R$)</th><th class="num">Acumulado (R$)</th><th>% do teto acum.</th>
+          </tr></thead>
+          <tbody>
+            ${semanasAcum.map(s => `
+              <tr class="${s.w ? 'linha-clic' : ''}" ${s.w ? `title="Clique para ver o detalhe diário" data-semana-idx="${s.idx}"` : ''}>
+                <td><b>${s.rotulo}</b></td>
+                <td class="tag-sem">${s.faixa}</td>
+                <td class="num">${s.w ? s.w.viagens : '—'}</td>
+                <td class="num">${s.w ? numBR(s.w.ton, 1) : '—'}</td>
+                <td class="num">${s.w && s.w.viagens && me.espec !== 'COLHEDORA' && me.espec !== 'TRANSBORDO' ? numBR(s.w.km / s.w.viagens, 0) : '—'}</td>
+                <td class="num">${s.w ? numBR(s.w.valor) : '—'}</td>
+                <td class="num" style="font-weight:600">${numBR(s.acum)}</td>
+                <td><div style="display:flex;align-items:center;gap:6px">
+                  <div class="barra" style="width:80px"><i class="${s.acum > me.teto ? 'acima' : ''}" style="width:${Math.min(100, (me.teto ? s.acum / me.teto : 0) * 100)}%"></i></div>
+                  <span class="mono" style="font-size:11.5px">${numBR((me.teto ? s.acum / me.teto : 0) * 100, 1)}%</span>
+                </div></td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div class="tag-sem" style="margin-top:12px">Documento individual de conferência do colaborador · produção valorizada por pesagem conforme tabela vigente (R$/t × faixa de km) · gratificação proporcional aos dias trabalhados (base ${diasBase}) · valores não incluem horas extras e DSR · fechamento no dia 15.</div>
+    </div>
+    ${modal}`;
+}
+function wireExtrato() {
+  const select = $('#extratoSelect');
+  if (select) select.onchange = e => { state.extratoMat = e.target.value; state.extratoSemanaAberta = null; render(); };
+  const btnImprimir = $('#btnImprimirExtrato');
+  if (btnImprimir) btnImprimir.onclick = () => window.print();
+  $('#main').querySelectorAll('[data-semana-idx]').forEach(tr => {
+    tr.onclick = () => { state.extratoSemanaAberta = +tr.dataset.semanaIdx; render(); };
+  });
+  const ov = $('#extratoModalOv');
+  if (ov) {
+    ov.onclick = () => { state.extratoSemanaAberta = null; render(); };
+    $('#extratoModalBox').onclick = e => e.stopPropagation();
+    $('#extratoModalFechar').onclick = () => { state.extratoSemanaAberta = null; render(); };
+  }
+}
 
 /* =============== aba: parametros =============== */
 function renderParametros() {
