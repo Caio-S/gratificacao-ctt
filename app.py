@@ -3,6 +3,7 @@ from datetime import date
 import openpyxl
 from flask import Flask, jsonify, render_template, request
 
+import calculo
 import calculo_defaults
 import data_store
 import parsers
@@ -163,6 +164,42 @@ def restaurar_faixas():
     atual.update(calculo_defaults.faixas_padrao())
     data_store.set_parametros(atual)
     return jsonify(atual)
+
+
+def _semana_json(sem):
+    d = dict(sem)
+    d.pop("_vCod", None)
+    d["dias"] = {iso: {k: v for k, v in dia.items() if k != "_vCod"} for iso, dia in d.get("dias", {}).items()}
+    return d
+
+
+def _agregado_json(k):
+    d = dict(k)
+    d.pop("_vCod", None)
+    if isinstance(d.get("admissao"), date):
+        d["admissao"] = d["admissao"].isoformat()
+    d["semanas"] = {str(idx): _semana_json(sem) for idx, sem in d.get("semanas", {}).items()}
+    return d
+
+
+@app.route("/api/calculo", methods=["GET"])
+def get_calculo():
+    inicio = parse_data(data_store.get_periodo()["inicio"])
+    fim = parse_data(data_store.get_periodo()["fim"])
+    if not inicio or not fim:
+        return jsonify({"error": "Período inválido."}), 400
+    resultado = calculo.calcular(
+        data_store.get_funcionarios(),
+        data_store.get_pesagens(),
+        inicio,
+        fim,
+        data_store.get_dias_base(),
+        data_store.get_parametros(),
+    )
+    return jsonify({
+        "lista": [_agregado_json(k) for k in resultado["lista"]],
+        "nSem": resultado["nSem"],
+    })
 
 
 if __name__ == "__main__":

@@ -4,17 +4,24 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const brl = n => (Number(n) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const numBR = (n, casas = 2) => (Number(n) || 0).toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
+const norm = s => String(s ?? '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toUpperCase().trim();
 const brDate = iso => iso ? iso.split('-').reverse().join('/') : '—';
 
 /* =============== estado =============== */
 const state = {
   view: 'dados',
   exibirNomes: false,
+  extratoMat: null,
+  /* cada aba com filtro proprio tem seu objeto isolado — nao ha estado de
+     filtro global compartilhado entre abas (evita o painel da diretoria, ou
+     qualquer outra aba, herdar o filtro aplicado em outra) */
+  filtroCalculo: { busca: '', apenasComProducao: true, especialidade: 'TODOS', departamento: 'TODOS', detalheAberto: null },
 };
 
 /* dados carregados do backend (funcionarios/pesagens/frotas/periodo) */
 let DADOS = { funcionarios: [], pesagens: [], frotas: [], periodo: { inicio: null, fim: null }, diasBase: 25 };
 let PARAMS = null;
+let CALC = null;
 
 async function api(path, opts) {
   const res = await fetch('/api' + path, opts);
@@ -34,6 +41,25 @@ async function carregarDados() {
 
 async function carregarParametros() {
   PARAMS = await api('/parametros');
+}
+
+async function carregarCalculo() {
+  CALC = await api('/calculo');
+}
+
+function renderPreservandoFoco() {
+  const ativo = document.activeElement;
+  const id = ativo && ativo.id;
+  const selStart = ativo && typeof ativo.selectionStart === 'number' ? ativo.selectionStart : null;
+  const selEnd = ativo && typeof ativo.selectionEnd === 'number' ? ativo.selectionEnd : null;
+  render();
+  if (id) {
+    const el = document.getElementById(id);
+    if (el) {
+      el.focus();
+      if (selStart !== null && el.setSelectionRange) { try { el.setSelectionRange(selStart, selEnd); } catch (_) {} }
+    }
+  }
 }
 
 function diasNoPeriodo(inicio, fim) {
@@ -79,10 +105,15 @@ function showAviso(tipo, txt) {
 }
 
 /* =============== navegacao =============== */
-function setView(v) {
+async function setView(v) {
   state.view = v;
   document.querySelectorAll('.aba').forEach(b => b.classList.toggle('ativa', b.dataset.v === v));
   showAviso(null);
+  $('#corpo').classList.toggle('largo', v === 'calculo');
+  if (v === 'calculo') {
+    $('#main').innerHTML = '<div class="cartao"><div class="dica">Calculando…</div></div>';
+    try { await carregarCalculo(); } catch (e) { showAviso('erro', 'Falha ao calcular: ' + e.message); }
+  }
   render();
 }
 document.querySelectorAll('.aba').forEach(b => b.onclick = () => setView(b.dataset.v));
@@ -93,14 +124,13 @@ function render() {
   const render_fn = { dados: renderDados, parametros: renderParametros, calculo: renderCalculo,
     semanal: renderSemanal, diretoria: renderDiretoria, extrato: renderExtrato }[state.view];
   $('#main').innerHTML = render_fn ? render_fn() : '';
-  const wire_fn = { dados: wireDados, parametros: wireParametros }[state.view];
+  const wire_fn = { dados: wireDados, parametros: wireParametros, calculo: wireCalculo }[state.view];
   if (wire_fn) wire_fn();
 }
 
 function placeholder(titulo) {
   return `<div class="cartao"><h2>${esc(titulo)}</h2><div class="dica">Em construção — chega nas próximas fases.</div></div>`;
 }
-function renderCalculo() { return placeholder('Cálculo'); }
 function renderSemanal() { return placeholder('Relatório semanal'); }
 function renderDiretoria() { return placeholder('Painel diretoria'); }
 function renderExtrato() { return placeholder('Extrato colaborador'); }
@@ -278,6 +308,178 @@ function wireParametros() {
     } catch (e) { showToast('erro', e.message); }
     finally { setBtnLoading(btn, false); }
   };
+}
+
+/* =============== aba: calculo =============== */
+const ESPEC_LABEL = { CAMINHAO: 'Caminhão', 'BATE-VOLTA': 'Bate-volta', COLHEDORA: 'Colhedora', TRANSBORDO: 'Transbordo' };
+const ESPEC_BADGE = { CAMINHAO: 'b-cam', 'BATE-VOLTA': 'b-bv', COLHEDORA: 'b-col', TRANSBORDO: 'b-tra' };
+function badgeEspec(espec) {
+  return `<span class="badge ${ESPEC_BADGE[espec] || 'b-cam'}">${ESPEC_LABEL[espec] || esc(espec)}</span>`;
+}
+
+function calculoFiltrado() {
+  const f = state.filtroCalculo;
+  const lista = CALC ? CALC.lista : [];
+  return lista.filter(k =>
+    (!f.apenasComProducao || k.viagens > 0) &&
+    (f.especialidade === 'TODOS' || k.espec === f.especialidade) &&
+    (f.departamento === 'TODOS' || (k.departamento || 'Não informado') === f.departamento) &&
+    (!f.busca || norm(k.nome).includes(norm(f.busca)) || String(k.mat).includes(f.busca))
+  );
+}
+
+function linhaCalculo(k) {
+  const f = state.filtroCalculo;
+  const frotasEntries = Object.entries(k.frotas || {}).sort((a, b) => b[1].ton - a[1].ton);
+  const aberto = f.detalheAberto === k.mat;
+  const admissao = k.admissao ? brDate(k.admissao) : '—';
+  const linhaPrincipal = `
+    <tr class="linha-calc" data-row-mat="${esc(k.mat)}" style="cursor:pointer" title="Clique para abrir o extrato do colaborador">
+      <td class="mono">${esc(k.mat)}</td>
+      <td>${state.exibirNomes ? esc(k.nome) : `Colaborador ${esc(k.mat)}`}<div class="tag-sem">${esc(k.funcao || '')}</div></td>
+      <td class="tag-sem">${esc(k.departamento || 'Não informado')}</td>
+      <td class="num tag-sem">${admissao}</td>
+      <td>${badgeEspec(k.espec)}</td>
+      <td class="num">${k.dias}</td>
+      <td class="num">${k.viagens}</td>
+      <td class="num">${numBR(k.ton, 1)}</td>
+      <td class="num">${k.kmMed ? numBR(k.kmMed, 0) : '—'}</td>
+      <td style="white-space:nowrap">${frotasEntries.length
+        ? `<button type="button" class="btn peq sec" data-detalhe="${esc(k.mat)}">🔍 ${frotasEntries.length} frota${frotasEntries.length > 1 ? 's' : ''} ${aberto ? '▴' : '▾'}</button>`
+        : '—'}</td>
+      <td class="num">${numBR(k.sal)}</td>
+      <td class="num" style="font-weight:600;color:var(--verde-esc)">${numBR(k.gratif)}</td>
+      <td class="num">${numBR(k.teto, 0)}</td>
+      <td><div style="display:flex;align-items:center;gap:6px">
+        <div class="barra" style="width:80px"><i class="${k.atingPct > 1 ? 'acima' : ''}" style="width:${Math.min(100, k.atingPct * 100)}%"></i></div>
+        <span class="mono" style="font-size:11.5px;font-weight:${k.atingPct > 1 ? 700 : 400}${k.atingPct > 1 ? ';color:var(--ambar)' : ''}">${numBR(k.atingPct * 100, 1)}%</span>
+      </div></td>
+      <td class="num" style="font-weight:600">${numBR(k.totalReceber)}</td>
+    </tr>`;
+  if (!aberto) return linhaPrincipal;
+  const mapaFrotas = new Map((DADOS.frotas || []).map(fr => [String(fr.frota), fr]));
+  const corpoDetalhe = frotasEntries.length
+    ? frotasEntries.map(([cod, dv]) => {
+        const disp = mapaFrotas.get(String(cod));
+        const pctTon = k.ton ? numBR(100 * dv.ton / k.ton, 0) : '0';
+        return `
+          <div class="frota-item">
+            <div class="fi-cod mono">${esc(cod)}</div>
+            <div class="fi-desc">${disp && disp.desc ? esc(disp.desc) : '—'}</div>
+            <div class="fi-ton mono">${numBR(dv.ton, 0)} t · ${dv.vg} vg · ${pctTon}% da produção</div>
+            <div class="fi-disp">${disp
+              ? `<div class="barra" style="width:90px"><i style="width:${Math.min(100, disp.pct)}%;background:${disp.pct >= 85 ? 'var(--verde)' : disp.pct >= 70 ? 'var(--ambar)' : 'var(--vermelho)'}"></i></div><span class="mono" style="font-size:11.5px">${numBR(disp.pct, 1)}% disponibilidade</span>`
+              : `<span class="tag-sem">${(DADOS.frotas || []).length ? 'frota sem registro de disponibilidade' : 'importe a disponibilidade na aba Dados'}</span>`}</div>
+          </div>`;
+      }).join('')
+    : '<span class="tag-sem">Sem frota registrada nas pesagens.</span>';
+  return linhaPrincipal + `
+    <tr class="linha-frotas"><td colspan="15"><div class="frotas-box">${corpoDetalhe}</div></td></tr>`;
+}
+
+function tabelaCalculo(lista) {
+  if (!lista.length) {
+    return `<div class="scroll-x"><table><tbody><tr><td style="text-align:center;padding:24px;color:var(--muted)">Sem dados — importe as bases ou carregue a demonstração na aba Dados.</td></tr></tbody></table></div>`;
+  }
+  return `
+    <div class="scroll-x tabela-calc">
+      <table>
+        <thead><tr>
+          <th>Mat.</th><th>Colaborador</th><th>Departamento</th><th>Admissão</th><th>Espec.</th>
+          <th class="num">Dias</th><th class="num">Viagens</th><th class="num">Ton</th><th class="num">Km méd.</th>
+          <th>Frotas / disponib.</th><th class="num">Salário base</th><th class="num">Gratificação (R$)</th>
+          <th class="num">Teto (R$)</th><th>% Atingido</th><th class="num">Total (R$)</th>
+        </tr></thead>
+        <tbody>${lista.map(linhaCalculo).join('')}</tbody>
+      </table>
+    </div>`;
+}
+
+function renderCalculo() {
+  if (!CALC) return placeholder('Cálculo');
+  const f = state.filtroCalculo;
+  const filtrado = calculoFiltrado();
+  const departamentos = [...new Set(CALC.lista.map(k => k.departamento || 'Não informado'))].sort();
+  const resumo = filtrado.reduce((acc, k) => {
+    acc.n++; acc.ton += k.ton; acc.viagens += k.viagens; acc.gratif += k.gratif; acc.sal += k.sal; acc.totalReceber += k.totalReceber;
+    return acc;
+  }, { n: 0, ton: 0, viagens: 0, gratif: 0, sal: 0, totalReceber: 0 });
+  const diasBase = DADOS.diasBase;
+  const especCaminhao = (PARAMS.especialidades || []).find(e => e.chave === 'CAMINHAO') || {};
+  const grupos = [
+    { ch: ['CAMINHAO', 'BATE-VOLTA'], tit: 'Motoristas — Caminhão canavieiro',
+      crit: `cada viagem vale peso (t) × R$/t da faixa de km da viagem · teto R$ ${numBR(especCaminhao.valorProd || 0, 0)} · prorata ${diasBase} dias-base` },
+    { ch: ['COLHEDORA'], tit: 'Operadores — Colhedora',
+      crit: `meta ${numBR(PARAMS.tetoColhedora.metaDia, 0)} t/dia × ${diasBase} dias-base = ${numBR(PARAMS.tetoColhedora.metaDia * diasBase, 0)} t · gratificação = % da meta × R$ ${numBR(PARAMS.tetoColhedora.valor, 0)}` },
+    { ch: ['TRANSBORDO'], tit: 'Operadores — Transbordo',
+      crit: `meta ${numBR(PARAMS.tetoTransbordo.metaDia, 0)} t/dia × ${diasBase} dias-base = ${numBR(PARAMS.tetoTransbordo.metaDia * diasBase, 0)} t · gratificação = % da meta × R$ ${numBR(PARAMS.tetoTransbordo.valor, 0)}` },
+  ];
+  const secoes = grupos.map(g => {
+    const itens = filtrado.filter(k => g.ch.includes(k.espec));
+    if (!itens.length) return '';
+    const tot = itens.reduce((a, k) => (a.n++, a.ton += k.ton, a.g += k.gratif, a), { n: 0, ton: 0, g: 0 });
+    return `
+      <div class="cartao">
+        <div class="sec-head">
+          <div><h2 style="margin:0">${esc(g.tit)}</h2><div class="dica" style="margin:2px 0 0">Critério: ${esc(g.crit)}</div></div>
+          <div class="sec-tot mono">${tot.n} colab. · ${numBR(tot.ton, 0)} t · R$ ${numBR(tot.g, 0)}</div>
+        </div>
+        ${tabelaCalculo(itens)}
+      </div>`;
+  }).filter(Boolean).join('');
+
+  return `
+    <div class="kpis">
+      <div class="kpi"><div class="rot">Colaboradores</div><div class="val">${resumo.n}</div><div class="det">${f.especialidade === 'TODOS' ? 'todas as especialidades' : ESPEC_LABEL[f.especialidade] || f.especialidade}</div></div>
+      <div class="kpi"><div class="rot">Toneladas no período</div><div class="val">${numBR(resumo.ton, 0)}</div><div class="det">${resumo.viagens.toLocaleString('pt-BR')} viagens</div></div>
+      <div class="kpi"><div class="rot">Gratificação (R$)</div><div class="val">${numBR(resumo.gratif, 0)}</div><div class="det">prorata base ${diasBase} dias</div></div>
+      <div class="kpi"><div class="rot">Folha salário base (R$)</div><div class="val">${numBR(resumo.sal, 0)}</div><div class="det">soma dos ${resumo.n} colaboradores</div></div>
+      <div class="kpi"><div class="rot">Salário + gratificação</div><div class="val">${numBR(resumo.totalReceber, 0)}</div><div class="det">sem HE e DSR</div></div>
+    </div>
+    <div class="cartao">
+      <div class="linha-form" style="justify-content:space-between">
+        <h2 style="margin:0">Cálculo por colaborador</h2>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <input id="calcBusca" placeholder="Buscar nome ou matrícula…" value="${esc(f.busca)}" style="width:220px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;white-space:nowrap">
+            <input type="checkbox" id="calcSoProducao" ${f.apenasComProducao ? 'checked' : ''}> Só com produção
+          </label>
+          <select id="calcEspec">
+            <option value="TODOS" ${f.especialidade === 'TODOS' ? 'selected' : ''}>Todas especialidades</option>
+            <option value="CAMINHAO" ${f.especialidade === 'CAMINHAO' ? 'selected' : ''}>Caminhão canavieiro</option>
+            <option value="BATE-VOLTA" ${f.especialidade === 'BATE-VOLTA' ? 'selected' : ''}>Bate e volta</option>
+            <option value="COLHEDORA" ${f.especialidade === 'COLHEDORA' ? 'selected' : ''}>Operador colhedora</option>
+            <option value="TRANSBORDO" ${f.especialidade === 'TRANSBORDO' ? 'selected' : ''}>Operador transbordo</option>
+          </select>
+          <select id="calcDepto">
+            <option value="TODOS" ${f.departamento === 'TODOS' ? 'selected' : ''}>Todos os departamentos</option>
+            ${departamentos.map(d => `<option value="${esc(d)}" ${f.departamento === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}
+          </select>
+          <button class="btn no-print" id="btnExportarCalculoPdf">Exportar PDF</button>
+        </div>
+      </div>
+    </div>
+    ${secoes || '<div class="cartao"><div style="text-align:center;padding:24px;color:var(--muted)">Sem dados — importe as bases ou carregue a demonstração na aba Dados.</div></div>'}`;
+}
+function wireCalculo() {
+  const f = state.filtroCalculo;
+  $('#calcBusca').oninput = e => { f.busca = e.target.value; renderPreservandoFoco(); };
+  $('#calcSoProducao').onchange = e => { f.apenasComProducao = e.target.checked; render(); };
+  $('#calcEspec').onchange = e => { f.especialidade = e.target.value; render(); };
+  $('#calcDepto').onchange = e => { f.departamento = e.target.value; render(); };
+  $('#main').querySelectorAll('[data-detalhe]').forEach(btn => {
+    btn.onclick = e => {
+      e.stopPropagation();
+      const mat = btn.dataset.detalhe;
+      f.detalheAberto = f.detalheAberto === mat ? null : mat;
+      render();
+    };
+  });
+  $('#main').querySelectorAll('[data-row-mat]').forEach(tr => {
+    tr.onclick = () => { state.extratoMat = tr.dataset.rowMat; setView('extrato'); };
+  });
+  const btnPdf = $('#btnExportarCalculoPdf');
+  if (btnPdf) btnPdf.onclick = () => window.print();
 }
 
 /* =============== aba: dados =============== */
