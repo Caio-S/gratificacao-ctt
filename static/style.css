@@ -132,11 +132,21 @@ tr.linha-clic:hover td{background:#EAF1E7}
 .toast.show{opacity:1;transform:translateY(0);pointer-events:auto}
 .toast.ok{background:#EAF3EC;border-color:#BFDCC8;color:#1B4D31}
 .toast.erro{background:#F8ECEA;border-color:#E4C0B9;color:#7C2D1F}
+@page{size:landscape;margin:10mm}
 @media print{
-  .abas,.btn,.no-print,.aviso,input,select{display:none!important}
+  .abas,.btn,.no-print,.aviso,input,select,.col-acoes{display:none!important}
   .app{background:#fff}
   .topo{padding:12px 20px 6px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  .corpo{padding:12px 0;max-width:100%}
+  .corpo,.corpo.largo{padding:12px 0;max-width:100%}
   .cartao,.kpi,.hero-dir{break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   tr:hover td{background:transparent}
+  .scroll-x{overflow:visible}
+  table{width:100%;table-layout:auto}
+  th{white-space:normal;font-size:8.5px;padding:4px 3px}
+  td{font-size:9.5px;padding:3px 3px}
+  td.num,th.num{font-size:9px}
+  .tag-sem{font-size:7.5px}
+  .tabela-calc th{font-size:8px;padding:3px 2px}
+  .tabela-calc td{font-size:8.5px;padding:3px 2px}
+  .tabela-calc td.num,.tabela-calc th.num{font-size:8px}
 }

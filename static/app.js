@@ -212,9 +212,8 @@ function renderSemanal() {
           const pct = k.teto ? a.valorAcum / k.teto * 100 : 0;
           return `<td class="num"><span style="font-weight:600${pct > 100 ? ';color:var(--ambar)' : ''}">${numBR(pct, 1)}%</span><div class="tag-sem">${numBR(a.tonAcum, 0)} t</div></td>`;
         }).join('')}
-        <td class="num" style="font-weight:600">${numBR(k['prodR$'])}</td>
         <td class="num">${numBR(k.ton, 0)}</td>
-        <td class="num" style="color:${projecao >= k.teto ? 'var(--verde)' : 'var(--ambar)'};font-weight:600">${numBR(projecao)}<div class="tag-sem">${numBR(k.teto ? projecao / k.teto * 100 : 0, 1)}% do teto</div></td>
+        <td class="num" style="color:${projecao >= k.teto ? 'var(--verde)' : 'var(--ambar)'};font-weight:600">${numBR(k.teto ? projecao / k.teto * 100 : 0, 1)}%</td>
       </tr>`;
   }).join('');
 
@@ -243,9 +242,9 @@ function renderSemanal() {
           <thead><tr>
             <th>Mat.</th><th>Colaborador</th><th>Departamento</th><th>Espec.</th>
             ${semanasVisiveis.map(s => `<th class="num">${s.rotulo}<div class="tag-sem">${s.faixa}</div></th>`).join('')}
-            <th class="num">Acum. (R$)</th><th class="num">Ton acum.</th><th class="num">Projeção fim (R$)</th>
+            <th class="num">Ton acum.</th><th class="num">Projeção fim (%)</th>
           </tr></thead>
-          <tbody>${linhas || `<tr><td colspan="${7 + semanasVisiveis.length}" style="text-align:center;padding:24px;color:var(--muted)">Sem dados no período.</td></tr>`}</tbody>
+          <tbody>${linhas || `<tr><td colspan="${6 + semanasVisiveis.length}" style="text-align:center;padding:24px;color:var(--muted)">Sem dados no período.</td></tr>`}</tbody>
         </table>
       </div>
     </div>`;
@@ -821,7 +820,7 @@ function linhaCalculo(k) {
         <span class="mono" style="font-size:11.5px;font-weight:${k.atingPct > 1 ? 700 : 400}${k.atingPct > 1 ? ';color:var(--ambar)' : ''}">${numBR(k.atingPct * 100, 1)}%</span>
       </div></td>
       <td class="num" style="font-weight:600">${numBR(k.totalReceber)}</td>
-      <td><button type="button" class="btn peq sec" data-extrato="${esc(k.mat)}" title="Abrir extrato do colaborador">📄 Extrato</button></td>
+      <td class="col-acoes"><button type="button" class="btn peq sec" data-extrato="${esc(k.mat)}" title="Abrir extrato do colaborador">📄 Extrato</button></td>
     </tr>`;
   if (!aberto) return linhaPrincipal;
   const mapaFrotas = new Map((DADOS.frotas || []).map(fr => [String(fr.frota), fr]));
@@ -855,7 +854,7 @@ function tabelaCalculo(lista) {
           <th>Mat.</th><th>Colaborador</th><th>Departamento</th><th>Admissão</th><th>Espec.</th>
           <th class="num">Dias</th><th class="num">Viagens</th><th class="num">Ton</th><th class="num">Km méd.</th>
           <th>Frotas / disponib.</th><th class="num">Salário base</th><th class="num">Gratificação (R$)</th>
-          <th class="num">Teto (R$)</th><th>% Atingido</th><th class="num">Total (R$)</th><th>Ações</th>
+          <th class="num">Teto (R$)</th><th>% Atingido</th><th class="num">Total (R$)</th><th class="col-acoes">Ações</th>
         </tr></thead>
         <tbody>${lista.map(linhaCalculo).join('')}</tbody>
       </table>
