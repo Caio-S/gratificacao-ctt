@@ -15,6 +15,7 @@ const state = {
   extratoMat: null,
   extratoSemanaAberta: null,
   ajusteModalMat: null,
+  rejeitarId: null,
   /* cada aba com filtro proprio tem seu objeto isolado — nao ha estado de
      filtro global compartilhado entre abas (evita o painel da diretoria, ou
      qualquer outra aba, herdar o filtro aplicado em outra) */
@@ -27,6 +28,8 @@ const state = {
 let DADOS = { funcionarios: [], pesagens: [], frotas: [], periodo: { inicio: null, fim: null }, diasBase: 25 };
 let PARAMS = null;
 let CALC = null;
+let AJUSTES_PENDENTES = [];
+let USUARIOS_LISTA = [];
 
 async function api(path, opts) {
   const res = await fetch('/api' + path, opts);
@@ -50,6 +53,14 @@ async function carregarParametros() {
 
 async function carregarCalculo() {
   CALC = await api('/calculo');
+}
+
+async function carregarAjustesPendentes() {
+  AJUSTES_PENDENTES = await api('/ajustes-pendentes');
+}
+
+async function carregarUsuarios() {
+  USUARIOS_LISTA = await api('/usuarios');
 }
 
 function renderPreservandoFoco() {
@@ -120,6 +131,12 @@ async function setView(v) {
     $('#main').innerHTML = '<div class="cartao"><div class="dica">Calculando…</div></div>';
     try { await carregarCalculo(); } catch (e) { showAviso('erro', 'Falha ao calcular: ' + e.message); }
   }
+  if (v === 'aprovacoes') {
+    try { await carregarAjustesPendentes(); } catch (e) { showAviso('erro', 'Falha ao carregar aprovações: ' + e.message); }
+  }
+  if (v === 'usuarios') {
+    try { await carregarUsuarios(); } catch (e) { showAviso('erro', 'Falha ao carregar usuários: ' + e.message); }
+  }
   render();
 }
 document.querySelectorAll('.aba').forEach(b => b.onclick = () => setView(b.dataset.v));
@@ -128,9 +145,11 @@ $('#chkNomes').onchange = e => { state.exibirNomes = e.target.checked; render();
 
 function render() {
   const render_fn = { dados: renderDados, parametros: renderParametros, calculo: renderCalculo,
-    semanal: renderSemanal, diretoria: renderDiretoria, extrato: renderExtrato }[state.view];
+    semanal: renderSemanal, diretoria: renderDiretoria, extrato: renderExtrato,
+    aprovacoes: renderAprovacoes, usuarios: renderUsuarios }[state.view];
   $('#main').innerHTML = render_fn ? render_fn() : '';
-  const wire_fn = { dados: wireDados, parametros: wireParametros, calculo: wireCalculo, semanal: wireSemanal, diretoria: wireDiretoria, extrato: wireExtrato }[state.view];
+  const wire_fn = { dados: wireDados, parametros: wireParametros, calculo: wireCalculo, semanal: wireSemanal, diretoria: wireDiretoria, extrato: wireExtrato,
+    aprovacoes: wireAprovacoes, usuarios: wireUsuarios }[state.view];
   if (wire_fn) wire_fn();
 }
 
@@ -829,7 +848,8 @@ function linhaCalculo(k) {
       <td class="num" style="font-weight:600">${numBR(k.totalReceber)}</td>
       <td class="col-acoes" style="white-space:nowrap">
         <button type="button" class="btn peq sec" data-extrato="${esc(k.mat)}" title="Abrir extrato do colaborador">📄 Extrato</button>
-        <button type="button" class="btn peq sec" data-ajuste="${esc(k.mat)}" title="Ajustar percentual manualmente">⚙️ Ajuste</button>
+        ${podeAdministrar() ? `<button type="button" class="btn peq sec" data-ajuste="${esc(k.mat)}" title="Ajustar percentual manualmente">⚙️ Ajuste</button>` : ''}
+        ${podeSugerirAjuste() ? `<button type="button" class="btn peq sec" data-ajuste="${esc(k.mat)}" title="Sugerir ajuste (precisa de aprovação)">📝 Sugerir ajuste</button>` : ''}
       </td>
     </tr>`;
   if (!aberto) return linhaPrincipal;
@@ -876,27 +896,28 @@ function renderAjusteModal() {
   if (!mat) return '';
   const k = (CALC.lista || []).find(x => x.mat === mat);
   if (!k) return '';
+  const sugerir = podeSugerirAjuste();
   return `
     <div class="modal-ov no-print" id="ajusteModalOv">
       <div class="modal-box" id="ajusteModalBox">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-          <h3>Ajuste manual — ${esc(k.mat)}</h3>
+          <h3>${sugerir ? 'Sugerir ajuste' : 'Ajuste manual'} — ${esc(k.mat)}</h3>
           <button class="modal-fecha" id="ajusteModalFechar">×</button>
         </div>
-        <div class="dica">Soma pontos percentuais ao % atingido deste colaborador (ex.: produção real não capturada pelo sistema, como viagens particulares). O total nunca ultrapassa 100% do teto por conta deste ajuste. É obrigatório justificar — fica registrado para auditoria e aparece no extrato do colaborador.</div>
+        <div class="dica">Soma pontos percentuais ao % atingido deste colaborador (ex.: produção real não capturada pelo sistema, como viagens particulares). O total nunca ultrapassa 100% do teto por conta deste ajuste. É obrigatório justificar — fica registrado para auditoria e aparece no extrato do colaborador.${sugerir ? ' Sua sugestão precisa ser aprovada por Gerente e Diretoria antes de valer.' : ''}</div>
         <div class="campo" style="margin-top:10px;max-width:160px">
           <label>Percentual a somar (%)</label>
-          <input type="number" step="0.1" id="ajustePctInput" value="${esc(k.ajustePct ?? '')}" placeholder="ex: 15">
+          <input type="number" step="0.1" id="ajustePctInput" value="${sugerir ? '' : esc(k.ajustePct ?? '')}" placeholder="ex: 15">
         </div>
         <div class="campo" style="margin-top:10px">
           <label>Observação (obrigatória)</label>
-          <textarea id="ajusteObsInput" rows="3" style="width:100%;font-family:'Inter';font-size:13px;padding:8px;border:1px solid var(--linha);border-radius:5px;box-sizing:border-box" placeholder="Explique o motivo do ajuste…">${esc(k.ajusteObs || '')}</textarea>
+          <textarea id="ajusteObsInput" rows="3" style="width:100%;font-family:'Inter';font-size:13px;padding:8px;border:1px solid var(--linha);border-radius:5px;box-sizing:border-box" placeholder="Explique o motivo do ajuste…">${sugerir ? '' : esc(k.ajusteObs || '')}</textarea>
         </div>
         <div class="linha-form" style="margin-top:14px;justify-content:space-between">
-          <button class="btn sec" id="ajusteRemover" style="color:var(--vermelho);border-color:var(--vermelho)" ${k.ajustePct ? '' : 'disabled'}>Remover ajuste</button>
+          ${sugerir ? '<span></span>' : `<button class="btn sec" id="ajusteRemover" style="color:var(--vermelho);border-color:var(--vermelho)" ${k.ajustePct ? '' : 'disabled'}>Remover ajuste</button>`}
           <div style="display:flex;gap:8px">
             <button class="btn sec" id="ajusteCancelar">Cancelar</button>
-            <button class="btn" id="ajusteSalvar">Salvar ajuste</button>
+            <button class="btn" id="ajusteSalvar">${sugerir ? 'Enviar para aprovação' : 'Salvar ajuste'}</button>
           </div>
         </div>
       </div>
@@ -1017,15 +1038,23 @@ function wireCalculo() {
       const btn = $('#ajusteSalvar');
       setBtnLoading(btn, true);
       try {
-        await api(`/ajuste/${encodeURIComponent(mat)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pct, obs }) });
-        state.ajusteModalMat = null;
-        await carregarCalculo();
-        render();
-        showToast('ok', 'Ajuste salvo.');
+        if (podeSugerirAjuste()) {
+          await api('/ajustes-pendentes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mat, pct, obs }) });
+          state.ajusteModalMat = null;
+          showToast('ok', 'Sugestão enviada para aprovação do Gerente e da Diretoria.');
+          render();
+        } else {
+          await api(`/ajuste/${encodeURIComponent(mat)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pct, obs }) });
+          state.ajusteModalMat = null;
+          await carregarCalculo();
+          render();
+          showToast('ok', 'Ajuste salvo.');
+        }
       } catch (e) { showToast('erro', e.message); }
       finally { setBtnLoading(btn, false); }
     };
-    $('#ajusteRemover').onclick = async () => {
+    const btnAjusteRemover = $('#ajusteRemover');
+    if (btnAjusteRemover) btnAjusteRemover.onclick = async () => {
       const mat = state.ajusteModalMat;
       const btn = $('#ajusteRemover');
       setBtnLoading(btn, true);
@@ -1041,10 +1070,221 @@ function wireCalculo() {
   }
 }
 
+/* =============== aba: aprovacoes pendentes =============== */
+function renderRejeitarModal() {
+  const id = state.rejeitarId;
+  if (!id) return '';
+  const a = AJUSTES_PENDENTES.find(x => x.id === id);
+  if (!a) return '';
+  return `
+    <div class="modal-ov no-print" id="rejeitarModalOv">
+      <div class="modal-box" id="rejeitarModalBox">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <h3>Rejeitar sugestão — ${esc(a.mat)}</h3>
+          <button class="modal-fecha" id="rejeitarModalFechar">×</button>
+        </div>
+        <div class="dica">Sugestão de +${numBR(a.pct, 1)}% por ${esc(a.criadoPor)}: "${esc(a.obs)}"</div>
+        <div class="campo" style="margin-top:10px">
+          <label>Motivo da rejeição (obrigatório)</label>
+          <textarea id="rejeitarMotivoInput" rows="3" style="width:100%;font-family:'Inter';font-size:13px;padding:8px;border:1px solid var(--linha);border-radius:5px;box-sizing:border-box"></textarea>
+        </div>
+        <div class="linha-form" style="margin-top:14px;justify-content:flex-end">
+          <button class="btn sec" id="rejeitarCancelar">Cancelar</button>
+          <button class="btn" id="rejeitarConfirmar" style="background:var(--vermelho)">Confirmar rejeição</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderAprovacoes() {
+  if (!podeAprovar()) return placeholder('Aprovações pendentes');
+  const meuPapel = USUARIO.papel;
+  const linhas = AJUSTES_PENDENTES.map(a => {
+    const jaAprovouEu = meuPapel === 'gerente' ? a.aprovadoGerente : a.aprovadoDiretoria;
+    return `
+      <tr>
+        <td><input type="checkbox" class="chkAprovar" value="${a.id}" ${jaAprovouEu ? 'disabled checked' : ''}></td>
+        <td class="mono">${esc(a.mat)}</td>
+        <td class="num" style="font-weight:600;color:var(--azul)">+${numBR(a.pct, 1)}%</td>
+        <td style="max-width:280px">${esc(a.obs)}</td>
+        <td class="tag-sem">${esc(a.criadoPor)}<br>${a.criadoEm ? brDate(a.criadoEm.slice(0, 10)) : ''}</td>
+        <td>
+          <span class="tag-sem" style="color:${a.aprovadoGerente ? 'var(--verde)' : 'var(--muted)'}">${a.aprovadoGerente ? '✓' : '—'} Gerente</span><br>
+          <span class="tag-sem" style="color:${a.aprovadoDiretoria ? 'var(--verde)' : 'var(--muted)'}">${a.aprovadoDiretoria ? '✓' : '—'} Diretoria</span>
+        </td>
+        <td><button type="button" class="btn peq sec" data-rejeitar="${a.id}" style="color:var(--vermelho);border-color:var(--vermelho)">Rejeitar</button></td>
+      </tr>`;
+  }).join('');
+
+  return `
+    <div class="cartao">
+      <div class="linha-form" style="justify-content:space-between">
+        <div>
+          <h2 style="margin:0">Aprovações pendentes</h2>
+          <div class="dica" style="margin:4px 0 0">Sugestões de ajuste manual dos coordenadores, aguardando aprovação do Gerente e da Diretoria (as duas são necessárias pra valer). Marque as linhas e aprove em lote, ou rejeite individualmente com motivo.</div>
+        </div>
+        <button class="btn" id="btnAprovarSelecionados">Aprovar selecionados</button>
+      </div>
+      <div class="scroll-x">
+        <table>
+          <thead><tr>
+            <th><input type="checkbox" id="chkTodos"></th>
+            <th>Mat.</th><th class="num">Ajuste</th><th>Observação</th><th>Sugerido por</th><th>Aprovações</th><th>Ação</th>
+          </tr></thead>
+          <tbody>${linhas || '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">Nenhum ajuste pendente.</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>
+    ${renderRejeitarModal()}`;
+}
+function wireAprovacoes() {
+  if (!podeAprovar()) return;
+  const chkTodos = $('#chkTodos');
+  if (chkTodos) chkTodos.onchange = e => {
+    document.querySelectorAll('.chkAprovar:not(:disabled)').forEach(c => { c.checked = e.target.checked; });
+  };
+  const btnAprovar = $('#btnAprovarSelecionados');
+  if (btnAprovar) btnAprovar.onclick = async () => {
+    const ids = [...document.querySelectorAll('.chkAprovar:checked:not(:disabled)')].map(c => +c.value);
+    if (!ids.length) { showToast('erro', 'Selecione ao menos um ajuste.'); return; }
+    setBtnLoading(btnAprovar, true);
+    try {
+      const r = await api('/ajustes-pendentes/aprovar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) });
+      await carregarAjustesPendentes();
+      render();
+      showToast('ok', r.aplicados.length ? `${r.aplicados.length} ajuste(s) aprovado(s) e já aplicado(s) (segunda aprovação recebida).` : 'Sua aprovação foi registrada — falta a aprovação do outro papel para aplicar.');
+    } catch (e) { showToast('erro', e.message); }
+    finally { setBtnLoading(btnAprovar, false); }
+  };
+  document.querySelectorAll('[data-rejeitar]').forEach(btn => {
+    btn.onclick = () => { state.rejeitarId = +btn.dataset.rejeitar; render(); };
+  });
+  const ov = $('#rejeitarModalOv');
+  if (ov) {
+    const fechar = () => { state.rejeitarId = null; render(); };
+    ov.onclick = fechar;
+    $('#rejeitarModalBox').onclick = e => e.stopPropagation();
+    $('#rejeitarModalFechar').onclick = fechar;
+    $('#rejeitarCancelar').onclick = fechar;
+    $('#rejeitarConfirmar').onclick = async () => {
+      const motivo = $('#rejeitarMotivoInput').value.trim();
+      if (!motivo) { showToast('erro', 'Informe o motivo da rejeição.'); return; }
+      const btn = $('#rejeitarConfirmar');
+      setBtnLoading(btn, true);
+      try {
+        await api(`/ajustes-pendentes/${state.rejeitarId}/rejeitar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ motivo }) });
+        state.rejeitarId = null;
+        await carregarAjustesPendentes();
+        render();
+        showToast('ok', 'Sugestão rejeitada.');
+      } catch (e) { showToast('erro', e.message); }
+      finally { setBtnLoading(btn, false); }
+    };
+  }
+}
+
+/* =============== aba: usuarios (so diretoria) =============== */
+function renderUsuarios() {
+  if (!ehDiretoria()) return placeholder('Usuários');
+  const opcoesPapel = papelAtual => Object.keys(PAPEL_LABEL)
+    .map(p => `<option value="${p}" ${p === papelAtual ? 'selected' : ''}>${PAPEL_LABEL[p]}</option>`).join('');
+  const linhas = USUARIOS_LISTA.map(u => `
+    <tr data-user-id="${u.id}">
+      <td class="mono">${esc(u.username)}</td>
+      <td>${esc(u.nome || '—')}</td>
+      <td><select class="selPapel" data-id="${u.id}">${opcoesPapel(u.papel)}</select></td>
+      <td><input type="checkbox" class="chkAtivo" data-id="${u.id}" ${u.ativo ? 'checked' : ''}></td>
+      <td style="white-space:nowrap">
+        <button type="button" class="btn peq sec" data-resetsenha="${u.id}">Redefinir senha</button>
+        ${u.username !== USUARIO.username ? `<button type="button" class="btn peq sec" data-removeruser="${u.id}" style="color:var(--vermelho);border-color:var(--vermelho)">Remover</button>` : ''}
+      </td>
+    </tr>`).join('');
+
+  return `
+    <div class="cartao">
+      <h2>Novo usuário</h2>
+      <div class="linha-form">
+        <div class="campo"><label>Usuário (login)</label><input id="novoUserUsername"></div>
+        <div class="campo"><label>Nome</label><input id="novoUserNome"></div>
+        <div class="campo"><label>Senha (mín. 6)</label><input id="novoUserSenha" type="password"></div>
+        <div class="campo"><label>Papel</label>
+          <select id="novoUserPapel">${opcoesPapel('usuario')}</select>
+        </div>
+        <button class="btn" id="btnCriarUsuario">Criar usuário</button>
+      </div>
+    </div>
+    <div class="cartao">
+      <h2>Usuários cadastrados</h2>
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>Usuário</th><th>Nome</th><th>Papel</th><th>Ativo</th><th>Ações</th></tr></thead>
+          <tbody>${linhas || '<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--muted)">Nenhum usuário.</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+function wireUsuarios() {
+  if (!ehDiretoria()) return;
+  $('#btnCriarUsuario').onclick = async () => {
+    const btn = $('#btnCriarUsuario');
+    const username = $('#novoUserUsername').value.trim();
+    const nome = $('#novoUserNome').value.trim();
+    const senha = $('#novoUserSenha').value;
+    const papel = $('#novoUserPapel').value;
+    if (!username || senha.length < 6) { showToast('erro', 'Informe usuário e senha (mínimo 6 caracteres).'); return; }
+    setBtnLoading(btn, true);
+    try {
+      await api('/usuarios', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, nome, senha, papel }) });
+      await carregarUsuarios();
+      render();
+      showToast('ok', 'Usuário criado.');
+    } catch (e) { showToast('erro', e.message); }
+    finally { setBtnLoading(btn, false); }
+  };
+  document.querySelectorAll('.selPapel').forEach(sel => {
+    sel.onchange = async () => {
+      try {
+        await api(`/usuarios/${sel.dataset.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ papel: sel.value }) });
+        showToast('ok', 'Papel atualizado.');
+      } catch (e) { showToast('erro', e.message); await carregarUsuarios(); render(); }
+    };
+  });
+  document.querySelectorAll('.chkAtivo').forEach(chk => {
+    chk.onchange = async () => {
+      try {
+        await api(`/usuarios/${chk.dataset.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ativo: chk.checked }) });
+        showToast('ok', chk.checked ? 'Usuário reativado.' : 'Usuário desativado.');
+      } catch (e) { showToast('erro', e.message); await carregarUsuarios(); render(); }
+    };
+  });
+  document.querySelectorAll('[data-resetsenha]').forEach(btn => {
+    btn.onclick = async () => {
+      const senha = prompt('Nova senha para este usuário (mínimo 6 caracteres):');
+      if (!senha) return;
+      if (senha.length < 6) { showToast('erro', 'Senha deve ter ao menos 6 caracteres.'); return; }
+      try {
+        await api(`/usuarios/${btn.dataset.resetsenha}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ senha }) });
+        showToast('ok', 'Senha redefinida.');
+      } catch (e) { showToast('erro', e.message); }
+    };
+  });
+  document.querySelectorAll('[data-removeruser]').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm('Remover este usuário permanentemente?')) return;
+      try {
+        await api(`/usuarios/${btn.dataset.removeruser}`, { method: 'DELETE' });
+        await carregarUsuarios();
+        render();
+        showToast('ok', 'Usuário removido.');
+      } catch (e) { showToast('erro', e.message); }
+    };
+  });
+}
+
 /* =============== aba: dados =============== */
 function renderDados() {
   const d = DADOS;
-  return `
+  const periodoBloco = podeAdministrar() ? `
     <div class="cartao">
       <h2>Período de apuração</h2>
       <div class="dica">Define o intervalo usado nos cálculos e nos dados de demonstração.</div>
@@ -1054,8 +1294,13 @@ function renderDados() {
         <div class="campo"><label>Dias-base (jornada completa)</label><input type="number" id="f_diasBase" min="1" max="31" value="${d.diasBase}"></div>
         <button class="btn" id="btnSalvarPeriodo">Salvar período</button>
       </div>
-    </div>
+    </div>` : `
+    <div class="cartao">
+      <h2>Período de apuração</h2>
+      <div class="dica">Período de ${brDate(d.periodo.inicio)} a ${brDate(d.periodo.fim)} · dias-base ${d.diasBase}. Somente Gerente/Diretoria podem alterar.</div>
+    </div>`;
 
+  const importBloco = podeImportar() ? `
     <div class="grade2">
       <div class="cartao">
         <h2>Funcionários / motoristas</h2>
@@ -1079,14 +1324,20 @@ function renderDados() {
       <label class="zona" id="zonaPesagens"><b>Clique para escolher o arquivo</b><br>ou arraste o .xlsx aqui
         <input type="file" id="f_pesagens" accept=".xlsx" style="display:none">
       </label>
-    </div>
+    </div>` : '';
 
+  const acoesResumo = podeImportar() ? `
+      <div class="linha-form" style="margin-bottom:14px">
+        ${podeImportar() ? '<button class="btn sec" id="btnDemo">Carregar dados de demonstração</button>' : ''}
+        ${podeAdministrar() ? '<button class="btn sec" id="btnLimpar" style="color:var(--vermelho);border-color:var(--vermelho)">Limpar tudo</button>' : ''}
+      </div>` : '';
+
+  return `
+    ${periodoBloco}
+    ${importBloco}
     <div class="cartao">
       <h2>Resumo atual</h2>
-      <div class="linha-form" style="margin-bottom:14px">
-        <button class="btn sec" id="btnDemo">Carregar dados de demonstração</button>
-        <button class="btn sec" id="btnLimpar" style="color:var(--vermelho);border-color:var(--vermelho)">Limpar tudo</button>
-      </div>
+      ${acoesResumo}
       <div class="kpis">
         <div class="kpi"><div class="rot">Funcionários</div><div class="val">${d.funcionarios.length}</div></div>
         <div class="kpi"><div class="rot">Pesagens</div><div class="val">${d.pesagens.length}</div></div>
@@ -1095,7 +1346,8 @@ function renderDados() {
     </div>`;
 }
 function wireDados() {
-  $('#btnSalvarPeriodo').onclick = async () => {
+  const btnSalvarPeriodo = $('#btnSalvarPeriodo');
+  if (btnSalvarPeriodo) btnSalvarPeriodo.onclick = async () => {
     const btn = $('#btnSalvarPeriodo');
     const inicio = $('#f_inicio').value, fim = $('#f_fim').value, diasBase = +$('#f_diasBase').value || 25;
     if (!inicio || !fim) { showToast('erro', 'Informe início e fim do período.'); return; }
@@ -1109,7 +1361,9 @@ function wireDados() {
   };
 
   const upload = (inputId, endpoint, labelOk) => {
-    $(inputId).onchange = async e => {
+    const el = $(inputId);
+    if (!el) return;
+    el.onchange = async e => {
       const arquivo = e.target.files[0]; if (!arquivo) return;
       const fd = new FormData(); fd.append('arquivo', arquivo);
       try {
@@ -1127,7 +1381,8 @@ function wireDados() {
     ? `${r.total} pesagens importadas de "${r.nomeArquivo}".`
     : `${r.total} pesagens importadas, mas a coluna de km/raio não foi encontrada — km vai ficar zerado.`);
 
-  $('#btnDemo').onclick = async () => {
+  const btnDemo = $('#btnDemo');
+  if (btnDemo) btnDemo.onclick = async () => {
     const btn = $('#btnDemo');
     setBtnLoading(btn, true);
     try {
@@ -1139,7 +1394,8 @@ function wireDados() {
     finally { setBtnLoading(btn, false); }
   };
 
-  $('#btnLimpar').onclick = async () => {
+  const btnLimpar = $('#btnLimpar');
+  if (btnLimpar) btnLimpar.onclick = async () => {
     if (!confirm('Limpar todos os dados importados (funcionários, pesagens e frotas)?')) return;
     const btn = $('#btnLimpar');
     setBtnLoading(btn, true);
@@ -1153,5 +1409,121 @@ function wireDados() {
   };
 }
 
+/* =============== autenticacao / papeis =============== */
+let USUARIO = null;
+
+function podeEscrever(...papeis) { return !!USUARIO && papeis.includes(USUARIO.papel); }
+const podeImportar = () => podeEscrever('coordenador', 'gerente', 'diretoria');
+const podeAdministrar = () => podeEscrever('gerente', 'diretoria');
+const podeSugerirAjuste = () => podeEscrever('coordenador');
+const podeAprovar = () => podeEscrever('gerente', 'diretoria');
+const ehDiretoria = () => podeEscrever('diretoria');
+
+const PAPEL_LABEL = { usuario: 'Usuário', coordenador: 'Coordenador', gerente: 'Gerente', diretoria: 'Diretoria' };
+
+function renderUsuarioSessao() {
+  if (!USUARIO) return '';
+  return `<b>${esc(USUARIO.nome || USUARIO.username)}</b><span class="papel-tag">${esc(PAPEL_LABEL[USUARIO.papel] || USUARIO.papel)}</span><button class="btn-sair" id="btnSair">Sair</button>`;
+}
+
+function aplicarVisibilidadePorPapel() {
+  const mostrar = {
+    dados: true, parametros: podeAdministrar(), calculo: true, semanal: true, diretoria: true, extrato: true,
+    aprovacoes: podeAprovar(), usuarios: ehDiretoria(),
+  };
+  document.querySelectorAll('.aba').forEach(b => { b.style.display = mostrar[b.dataset.v] === false ? 'none' : ''; });
+}
+
+function renderLoginScreen(erro) {
+  $('#appShell').style.display = 'none';
+  const authShell = $('#authShell');
+  authShell.style.display = 'flex';
+  authShell.innerHTML = `
+    <div class="auth-caixa">
+      <div class="cartao" style="max-width:360px;width:100%">
+        <div style="text-align:center;margin-bottom:14px">
+          <img src="/static/assets/logo_crv.png" alt="CRV Industrial" style="height:44px">
+          <h2 style="margin:10px 0 0">Gratificação CTT</h2>
+          <div class="dica">Entre com seu usuário e senha</div>
+        </div>
+        ${erro ? `<div class="aviso erro" style="display:block;margin-bottom:10px">${esc(erro)}</div>` : ''}
+        <div class="campo" style="margin-bottom:10px"><label>Usuário</label><input id="loginUser" style="width:100%"></div>
+        <div class="campo" style="margin-bottom:14px"><label>Senha</label><input id="loginSenha" type="password" style="width:100%"></div>
+        <button class="btn" id="btnLogin" style="width:100%">Entrar</button>
+      </div>
+    </div>`;
+  $('#btnLogin').onclick = fazerLogin;
+  authShell.querySelectorAll('input').forEach(inp => inp.onkeydown = e => { if (e.key === 'Enter') fazerLogin(); });
+  $('#loginUser').focus();
+}
+
+async function fazerLogin() {
+  const username = $('#loginUser').value.trim();
+  const senha = $('#loginSenha').value;
+  if (!username || !senha) { renderLoginScreen('Informe usuário e senha.'); return; }
+  const btn = $('#btnLogin');
+  setBtnLoading(btn, true);
+  try {
+    USUARIO = await api('/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, senha }) });
+    await iniciarApp();
+  } catch (e) {
+    renderLoginScreen(e.message);
+  } finally { setBtnLoading(btn, false); }
+}
+
+function renderBootstrapScreen(erro) {
+  $('#appShell').style.display = 'none';
+  const authShell = $('#authShell');
+  authShell.style.display = 'flex';
+  authShell.innerHTML = `
+    <div class="auth-caixa">
+      <div class="cartao" style="max-width:400px;width:100%">
+        <h2>Configuração inicial</h2>
+        <div class="dica">Nenhum usuário cadastrado ainda. Crie a primeira conta (Diretoria) para começar a usar o sistema.</div>
+        ${erro ? `<div class="aviso erro" style="display:block;margin:10px 0 0">${esc(erro)}</div>` : ''}
+        <div class="campo" style="margin:10px 0"><label>Seu nome</label><input id="bsNome" style="width:100%"></div>
+        <div class="campo" style="margin-bottom:10px"><label>Usuário (login)</label><input id="bsUser" style="width:100%"></div>
+        <div class="campo" style="margin-bottom:14px"><label>Senha (mín. 6 caracteres)</label><input id="bsSenha" type="password" style="width:100%"></div>
+        <button class="btn" id="btnBootstrap" style="width:100%">Criar conta e entrar</button>
+      </div>
+    </div>`;
+  $('#btnBootstrap').onclick = async () => {
+    const btn = $('#btnBootstrap');
+    setBtnLoading(btn, true);
+    try {
+      USUARIO = await api('/bootstrap', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome: $('#bsNome').value.trim(), username: $('#bsUser').value.trim(), senha: $('#bsSenha').value }),
+      });
+      await iniciarApp();
+    } catch (e) {
+      renderBootstrapScreen(e.message);
+    } finally { setBtnLoading(btn, false); }
+  };
+}
+
+async function iniciarApp() {
+  $('#authShell').style.display = 'none';
+  $('#appShell').style.display = '';
+  $('#usuarioSessao').innerHTML = renderUsuarioSessao();
+  $('#btnSair').onclick = async () => {
+    await api('/logout', { method: 'POST' }).catch(() => {});
+    USUARIO = null;
+    renderLoginScreen();
+  };
+  aplicarVisibilidadePorPapel();
+  await Promise.all([carregarDados(), carregarParametros()]);
+  setView('dados');
+}
+
 /* =============== boot =============== */
-Promise.all([carregarDados(), carregarParametros()]).then(() => setView('dados'));
+(async () => {
+  try {
+    const boot = await api('/precisa-bootstrap');
+    if (boot.precisaBootstrap) { renderBootstrapScreen(); return; }
+    USUARIO = await api('/me');
+    await iniciarApp();
+  } catch (e) {
+    renderLoginScreen();
+  }
+})();
