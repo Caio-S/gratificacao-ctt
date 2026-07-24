@@ -160,7 +160,7 @@ tr.linha-clic:hover td{background:#EAF1E7}
   /* extrato colaborador - compactar pra caber numa folha so */
   .recibo-topo{padding-bottom:5px;margin-bottom:5px}
   .recibo-topo .idc{font-size:18px}
-  .comp{margin:5px 0;gap:8px}
+  .comp{grid-template-columns:1fr 1fr 1fr!important;margin:5px 0;gap:8px}
   .comp .bloco{padding:5px 10px}
   .comp .bloco .v{font-size:16px;margin:1px 0}
   .comp .bloco.total .v{font-size:19px}
@@ -168,4 +168,8 @@ tr.linha-clic:hover td{background:#EAF1E7}
   .faixa-comp{height:10px;margin:2px 0}
   .colunas{display:none}
   .ajuste-aplicado{padding:5px 10px!important;margin-top:5px!important}
+
+  /* cartoes lado a lado (Parametros, Painel diretoria, Calculo) tambem nao
+     devem empilhar na impressao */
+  .grade2{grid-template-columns:1fr 1fr!important}
 }
