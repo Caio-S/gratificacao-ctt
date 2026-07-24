@@ -581,6 +581,11 @@ function renderExtrato() {
           </tbody>
         </table>
       </div>
+      ${me.ajustePct ? `
+      <div style="margin-top:14px;padding:12px 14px;background:#EAF1FF;border:1px solid #B9D2F0;border-radius:6px">
+        <div style="font-weight:700;font-size:13px;color:var(--azul);text-transform:uppercase;letter-spacing:.4px">Ajuste manual aplicado — +${numBR(me.ajustePct, 1)}%</div>
+        <div style="margin-top:4px;font-size:13px">${esc(me.ajusteObs || '')}</div>
+      </div>` : ''}
       <div class="tag-sem" style="margin-top:12px">Documento individual de conferência do colaborador · produção valorizada por pesagem conforme tabela vigente (R$/t × faixa de km) · gratificação proporcional aos dias trabalhados (base ${diasBase}) · valores não incluem horas extras e DSR · fechamento no dia 15.</div>
     </div>
     ${modal}`;
@@ -878,7 +883,7 @@ function renderAjusteModal() {
           <h3>Ajuste manual — ${esc(k.mat)}</h3>
           <button class="modal-fecha" id="ajusteModalFechar">×</button>
         </div>
-        <div class="dica">Soma pontos percentuais ao % atingido deste colaborador (ex.: produção real não capturada pelo sistema, como viagens particulares). É obrigatório justificar — fica registrado para auditoria.</div>
+        <div class="dica">Soma pontos percentuais ao % atingido deste colaborador (ex.: produção real não capturada pelo sistema, como viagens particulares). O total nunca ultrapassa 100% do teto por conta deste ajuste. É obrigatório justificar — fica registrado para auditoria e aparece no extrato do colaborador.</div>
         <div class="campo" style="margin-top:10px;max-width:160px">
           <label>Percentual a somar (%)</label>
           <input type="number" step="0.1" id="ajustePctInput" value="${esc(k.ajustePct ?? '')}" placeholder="ex: 15">

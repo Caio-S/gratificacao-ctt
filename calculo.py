@@ -219,7 +219,11 @@ def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, par
         if ajuste and ajuste.get("pct"):
             k["ajustePct"] = ajuste["pct"]
             k["ajusteObs"] = ajuste.get("obs", "")
-            gratif += (ajuste["pct"] / 100) * k["teto"]
+            # o ajuste manual nunca pode levar o total acima do teto (100%) -
+            # essa trava e exclusiva dele; producao real acima do teto (sem
+            # ajuste) continua podendo passar de 100% normalmente.
+            com_ajuste = min(gratif + (ajuste["pct"] / 100) * k["teto"], k["teto"])
+            gratif = max(gratif, com_ajuste)
         k["gratif"] = gratif
         k["atingPct"] = gratif / k["teto"] if k["teto"] else 0
         k["totalReceber"] = k["sal"] + gratif
