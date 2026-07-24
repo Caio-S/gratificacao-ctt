@@ -7,3 +7,4 @@ instance/
 *.db
 .DS_Store
 desktop.ini
+.claude/settings.local.json
