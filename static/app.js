@@ -582,7 +582,7 @@ function renderExtrato() {
         </table>
       </div>
       ${me.ajustePct ? `
-      <div style="margin-top:14px;padding:12px 14px;background:#EAF1FF;border:1px solid #B9D2F0;border-radius:6px">
+      <div class="ajuste-aplicado" style="margin-top:14px;padding:12px 14px;background:#EAF1FF;border:1px solid #B9D2F0;border-radius:6px">
         <div style="font-weight:700;font-size:13px;color:var(--azul);text-transform:uppercase;letter-spacing:.4px">Ajuste manual aplicado — +${numBR(me.ajustePct, 1)}%</div>
         <div style="margin-top:4px;font-size:13px">${esc(me.ajusteObs || '')}</div>
       </div>` : ''}

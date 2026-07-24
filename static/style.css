@@ -136,9 +136,16 @@ tr.linha-clic:hover td{background:#EAF1E7}
 @media print{
   .abas,.btn,.no-print,.aviso,input,select,.col-acoes{display:none!important}
   .app{background:#fff}
-  .topo{padding:12px 20px 6px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  .corpo,.corpo.largo{padding:12px 0;max-width:100%}
+  .topo{padding:4px 20px 3px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .topo h1{font-size:16px}
+  .topo .sub{margin:1px 0 4px;font-size:9px}
+  .topo-linha{padding-bottom:3px;gap:10px}
+  .logo-crv{height:26px;padding:2px 6px}
+  .corpo,.corpo.largo{padding:6px 0;max-width:100%}
   .cartao,.kpi,.hero-dir{break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .cartao{padding:8px 14px;margin-bottom:6px}
+  .cartao h2{font-size:13px;margin:2px 0 2px}
+  .cartao .dica{font-size:9px;margin-bottom:3px}
   tr:hover td{background:transparent}
   .scroll-x{overflow:visible}
   table{width:100%;table-layout:auto}
@@ -149,4 +156,16 @@ tr.linha-clic:hover td{background:#EAF1E7}
   .tabela-calc th{font-size:8px;padding:3px 2px}
   .tabela-calc td{font-size:8.5px;padding:3px 2px}
   .tabela-calc td.num,.tabela-calc th.num{font-size:8px}
+
+  /* extrato colaborador - compactar pra caber numa folha so */
+  .recibo-topo{padding-bottom:5px;margin-bottom:5px}
+  .recibo-topo .idc{font-size:18px}
+  .comp{margin:5px 0;gap:8px}
+  .comp .bloco{padding:5px 10px}
+  .comp .bloco .v{font-size:16px;margin:1px 0}
+  .comp .bloco.total .v{font-size:19px}
+  .comp .bloco .d{font-size:8.5px}
+  .faixa-comp{height:10px;margin:2px 0}
+  .colunas{display:none}
+  .ajuste-aplicado{padding:5px 10px!important;margin-top:5px!important}
 }
