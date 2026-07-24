@@ -4,6 +4,14 @@ Apuração da gratificação de produção de motoristas (caminhão canavieiro /
 
 Back-end Flask com persistência em Postgres (Supabase) — os dados importados (funcionários, pesagens, disponibilidade de frotas, parâmetros) ficam salvos no banco (`data_store.py`) e sobrevivem a redeploys e reinícios do servidor.
 
+Acesso protegido por login, com 4 papéis:
+- **Usuário** — só visualiza as tabelas.
+- **Coordenador** — visualiza + importa planilhas + sugere ajuste manual de % (fica pendente até aprovação).
+- **Gerente** e **Diretoria** — acesso completo (importar, parâmetros, período, ajuste manual direto) + aprovam/rejeitam sugestões de ajuste. Uma sugestão só é aplicada quando **os dois** (Gerente e Diretoria) aprovarem, em qualquer ordem.
+- **Diretoria** — também gerencia usuários (criar, trocar papel/senha, desativar).
+
+No primeiro acesso (sem nenhum usuário cadastrado), o site pede pra criar a primeira conta — vira Diretoria automaticamente.
+
 ## Banco de dados (Supabase)
 
 Pode reaproveitar um projeto Supabase já existente (ex.: o do Catálogo CH570) — a tabela usada aqui (`ctt_app_state`) é isolada por nome, não colide com outras tabelas. Se preferir isolar de vez, crie um projeto novo dedicado.
@@ -30,7 +38,9 @@ pip install -r requirements.txt
 Crie um arquivo `.env` na raiz do projeto (não é versionado) com:
 ```
 DATABASE_URL=postgresql://usuario:senha@host:6543/postgres
+SECRET_KEY=uma-string-aleatoria-longa
 ```
+`SECRET_KEY` é usada pra assinar a sessão de login — gere uma com `python -c "import secrets; print(secrets.token_hex(32))"`.
 
 ```
 python app.py        # http://localhost:5002
@@ -76,12 +86,12 @@ Quem tiver o Claude Code instalado pode simplesmente rodar `claude` dentro da pa
 
 ## Deploy (Render)
 
-Sem login — o `render.yaml` já aponta para o `gunicorn app:app`. Basta criar um Web Service no [Render](https://render.com) apontando para este repositório (ele detecta o `render.yaml`). Em **Environment**, adicione a variável `DATABASE_URL` com a connection string do Supabase (passo acima) — sem ela o app não sobe.
+O `render.yaml` já aponta para o `gunicorn app:app`. Basta criar um Web Service no [Render](https://render.com) apontando para este repositório (ele detecta o `render.yaml`). Em **Environment**, adicione `DATABASE_URL` (connection string do Supabase) e `SECRET_KEY` — sem qualquer uma das duas o app não sobe.
 
 ## Estrutura
 
-- `app.py` — rotas Flask + API REST (`/api/dados`, `/api/import/*`, `/api/parametros`, `/api/calculo`, `/api/periodo`, `/api/seed`)
-- `data_store.py` — persistência em Postgres/Supabase (funcionários, pesagens, frotas, parâmetros, período)
+- `app.py` — rotas Flask + API REST (`/api/dados`, `/api/import/*`, `/api/parametros`, `/api/calculo`, `/api/periodo`, `/api/seed`, `/api/login`, `/api/usuarios`, `/api/ajustes-pendentes`)
+- `data_store.py` — persistência em Postgres/Supabase (funcionários, pesagens, frotas, parâmetros, período, usuários, ajustes pendentes)
 - `calculo_defaults.py` — valores padrão dos parâmetros de cálculo (faixas de km, tetos, especialidades)
 - `parsers.py` — leitura das planilhas Excel e geração dos dados de demonstração
 - `calculo.py` — motor de cálculo da gratificação (agregação por colaborador, teto, prorata de dias)
