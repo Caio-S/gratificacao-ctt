@@ -14,6 +14,7 @@ const state = {
   exibirNomes: false,
   extratoMat: null,
   extratoSemanaAberta: null,
+  ajusteModalMat: null,
   /* cada aba com filtro proprio tem seu objeto isolado — nao ha estado de
      filtro global compartilhado entre abas (evita o painel da diretoria, ou
      qualquer outra aba, herdar o filtro aplicado em outra) */
@@ -805,7 +806,7 @@ function linhaCalculo(k) {
       <td class="tag-sem">${esc(k.departamento || 'Não informado')}</td>
       <td class="num tag-sem">${admissao}</td>
       <td>${badgeEspec(k.espec)}</td>
-      <td class="num">${k.dias}</td>
+      <td class="num">${k.diasTrabalhados}</td>
       <td class="num">${k.viagens}</td>
       <td class="num">${numBR(k.ton, 1)}</td>
       <td class="num">${k.kmMed ? numBR(k.kmMed, 0) : '—'}</td>
@@ -818,9 +819,13 @@ function linhaCalculo(k) {
       <td><div style="display:flex;align-items:center;gap:6px">
         <div class="barra" style="width:80px"><i class="${k.atingPct > 1 ? 'acima' : ''}" style="width:${Math.min(100, k.atingPct * 100)}%"></i></div>
         <span class="mono" style="font-size:11.5px;font-weight:${k.atingPct > 1 ? 700 : 400}${k.atingPct > 1 ? ';color:var(--ambar)' : ''}">${numBR(k.atingPct * 100, 1)}%</span>
+        ${k.ajustePct ? `<span class="tag-sem" style="color:var(--azul)" title="Ajuste manual: +${numBR(k.ajustePct, 1)}% — ${esc(k.ajusteObs || '')}">+${numBR(k.ajustePct, 1)}% ajuste</span>` : ''}
       </div></td>
       <td class="num" style="font-weight:600">${numBR(k.totalReceber)}</td>
-      <td class="col-acoes"><button type="button" class="btn peq sec" data-extrato="${esc(k.mat)}" title="Abrir extrato do colaborador">📄 Extrato</button></td>
+      <td class="col-acoes" style="white-space:nowrap">
+        <button type="button" class="btn peq sec" data-extrato="${esc(k.mat)}" title="Abrir extrato do colaborador">📄 Extrato</button>
+        <button type="button" class="btn peq sec" data-ajuste="${esc(k.mat)}" title="Ajustar percentual manualmente">⚙️ Ajuste</button>
+      </td>
     </tr>`;
   if (!aberto) return linhaPrincipal;
   const mapaFrotas = new Map((DADOS.frotas || []).map(fr => [String(fr.frota), fr]));
@@ -858,6 +863,38 @@ function tabelaCalculo(lista) {
         </tr></thead>
         <tbody>${lista.map(linhaCalculo).join('')}</tbody>
       </table>
+    </div>`;
+}
+
+function renderAjusteModal() {
+  const mat = state.ajusteModalMat;
+  if (!mat) return '';
+  const k = (CALC.lista || []).find(x => x.mat === mat);
+  if (!k) return '';
+  return `
+    <div class="modal-ov no-print" id="ajusteModalOv">
+      <div class="modal-box" id="ajusteModalBox">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <h3>Ajuste manual — ${esc(k.mat)}</h3>
+          <button class="modal-fecha" id="ajusteModalFechar">×</button>
+        </div>
+        <div class="dica">Soma pontos percentuais ao % atingido deste colaborador (ex.: produção real não capturada pelo sistema, como viagens particulares). É obrigatório justificar — fica registrado para auditoria.</div>
+        <div class="campo" style="margin-top:10px;max-width:160px">
+          <label>Percentual a somar (%)</label>
+          <input type="number" step="0.1" id="ajustePctInput" value="${esc(k.ajustePct ?? '')}" placeholder="ex: 15">
+        </div>
+        <div class="campo" style="margin-top:10px">
+          <label>Observação (obrigatória)</label>
+          <textarea id="ajusteObsInput" rows="3" style="width:100%;font-family:'Inter';font-size:13px;padding:8px;border:1px solid var(--linha);border-radius:5px;box-sizing:border-box" placeholder="Explique o motivo do ajuste…">${esc(k.ajusteObs || '')}</textarea>
+        </div>
+        <div class="linha-form" style="margin-top:14px;justify-content:space-between">
+          <button class="btn sec" id="ajusteRemover" style="color:var(--vermelho);border-color:var(--vermelho)" ${k.ajustePct ? '' : 'disabled'}>Remover ajuste</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn sec" id="ajusteCancelar">Cancelar</button>
+            <button class="btn" id="ajusteSalvar">Salvar ajuste</button>
+          </div>
+        </div>
+      </div>
     </div>`;
 }
 
@@ -925,7 +962,8 @@ function renderCalculo() {
         </div>
       </div>
     </div>
-    ${secoes || '<div class="cartao"><div style="text-align:center;padding:24px;color:var(--muted)">Sem dados — importe as bases ou carregue a demonstração na aba Dados.</div></div>'}`;
+    ${secoes || '<div class="cartao"><div style="text-align:center;padding:24px;color:var(--muted)">Sem dados — importe as bases ou carregue a demonstração na aba Dados.</div></div>'}
+    ${renderAjusteModal()}`;
 }
 function wireCalculo() {
   const f = state.filtroCalculo;
@@ -948,8 +986,54 @@ function wireCalculo() {
       setView('extrato');
     };
   });
+  $('#main').querySelectorAll('[data-ajuste]').forEach(btn => {
+    btn.onclick = e => {
+      e.stopPropagation();
+      state.ajusteModalMat = btn.dataset.ajuste;
+      render();
+    };
+  });
   const btnPdf = $('#btnExportarCalculoPdf');
   if (btnPdf) btnPdf.onclick = () => window.print();
+
+  const ov = $('#ajusteModalOv');
+  if (ov) {
+    const fechar = () => { state.ajusteModalMat = null; render(); };
+    ov.onclick = fechar;
+    $('#ajusteModalBox').onclick = e => e.stopPropagation();
+    $('#ajusteModalFechar').onclick = fechar;
+    $('#ajusteCancelar').onclick = fechar;
+    $('#ajusteSalvar').onclick = async () => {
+      const mat = state.ajusteModalMat;
+      const pct = parseFloat($('#ajustePctInput').value);
+      const obs = $('#ajusteObsInput').value.trim();
+      if (Number.isNaN(pct)) { showToast('erro', 'Informe o percentual.'); return; }
+      if (!obs) { showToast('erro', 'Informe a observação justificando o ajuste.'); return; }
+      const btn = $('#ajusteSalvar');
+      setBtnLoading(btn, true);
+      try {
+        await api(`/ajuste/${encodeURIComponent(mat)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pct, obs }) });
+        state.ajusteModalMat = null;
+        await carregarCalculo();
+        render();
+        showToast('ok', 'Ajuste salvo.');
+      } catch (e) { showToast('erro', e.message); }
+      finally { setBtnLoading(btn, false); }
+    };
+    $('#ajusteRemover').onclick = async () => {
+      const mat = state.ajusteModalMat;
+      const btn = $('#ajusteRemover');
+      setBtnLoading(btn, true);
+      try {
+        await api(`/ajuste/${encodeURIComponent(mat)}`, { method: 'DELETE' });
+        state.ajusteModalMat = null;
+        await carregarCalculo();
+        render();
+        showToast('ok', 'Ajuste removido.');
+      } catch (e) { showToast('erro', e.message); }
+      finally { setBtnLoading(btn, false); }
+    };
+  }
 }
 
 /* =============== aba: dados =============== */

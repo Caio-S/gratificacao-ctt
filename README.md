@@ -2,7 +2,22 @@
 
 Apuração da gratificação de produção de motoristas (caminhão canavieiro / bate e volta) e operadores (colhedora / transbordo): importação de planilhas Excel, parâmetros de cálculo editáveis, cálculo por colaborador, relatório semanal, painel executivo e extrato individual.
 
-Back-end Flask, sem banco de dados por enquanto — os dados importados (funcionários, pesagens, disponibilidade de frotas, parâmetros) ficam em memória do processo (`data_store.py`) e se perdem ao reiniciar o servidor. A camada de acesso a dados já é isolada das rotas e do front-end para facilitar a troca por um banco real no futuro.
+Back-end Flask com persistência em Postgres (Supabase) — os dados importados (funcionários, pesagens, disponibilidade de frotas, parâmetros) ficam salvos no banco (`data_store.py`) e sobrevivem a redeploys e reinícios do servidor.
+
+## Banco de dados (Supabase)
+
+Pode reaproveitar um projeto Supabase já existente (ex.: o do Catálogo CH570) — a tabela usada aqui (`ctt_app_state`) é isolada por nome, não colide com outras tabelas. Se preferir isolar de vez, crie um projeto novo dedicado.
+
+1. Em [supabase.com](https://supabase.com), no projeto escolhido, abra o **SQL Editor** e rode:
+   ```sql
+   create table if not exists ctt_app_state (
+     key text primary key,
+     value jsonb not null default '{}'::jsonb,
+     updated_at timestamptz not null default now()
+   );
+   ```
+3. Em **Project Settings → Database → Connection string**, copie a string no modo **Transaction pooler** (porta 6543) — combina melhor com o padrão de conexão do app (abre e fecha uma conexão por requisição).
+4. Defina essa string como variável de ambiente `DATABASE_URL` (veja abaixo, local e no Render).
 
 ## Rodar local
 
@@ -10,6 +25,14 @@ Back-end Flask, sem banco de dados por enquanto — os dados importados (funcion
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
+```
+
+Crie um arquivo `.env` na raiz do projeto (não é versionado) com:
+```
+DATABASE_URL=postgresql://usuario:senha@host:6543/postgres
+```
+
+```
 python app.py        # http://localhost:5002
 ```
 
@@ -53,12 +76,12 @@ Quem tiver o Claude Code instalado pode simplesmente rodar `claude` dentro da pa
 
 ## Deploy (Render)
 
-Sem banco de dados nem login — o `render.yaml` já aponta para o `gunicorn app:app`. Basta criar um Web Service no [Render](https://render.com) apontando para este repositório (ele detecta o `render.yaml`). Como os dados vivem em memória, cada deploy/restart limpa tudo — sem persistência entre reinicializações, sem múltiplas instâncias simultâneas.
+Sem login — o `render.yaml` já aponta para o `gunicorn app:app`. Basta criar um Web Service no [Render](https://render.com) apontando para este repositório (ele detecta o `render.yaml`). Em **Environment**, adicione a variável `DATABASE_URL` com a connection string do Supabase (passo acima) — sem ela o app não sobe.
 
 ## Estrutura
 
 - `app.py` — rotas Flask + API REST (`/api/dados`, `/api/import/*`, `/api/parametros`, `/api/calculo`, `/api/periodo`, `/api/seed`)
-- `data_store.py` — estado em memória (funcionários, pesagens, frotas, parâmetros, período)
+- `data_store.py` — persistência em Postgres/Supabase (funcionários, pesagens, frotas, parâmetros, período)
 - `calculo_defaults.py` — valores padrão dos parâmetros de cálculo (faixas de km, tetos, especialidades)
 - `parsers.py` — leitura das planilhas Excel e geração dos dados de demonstração
 - `calculo.py` — motor de cálculo da gratificação (agregação por colaborador, teto, prorata de dias)

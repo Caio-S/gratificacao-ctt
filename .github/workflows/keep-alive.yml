@@ -10,4 +10,4 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping /api/status
-        run: curl -sf https://gratificacao-ctt.onrender.com/api/status
+        run: curl -sf https://gratificacao-ctt-9g1k.onrender.com/api/status

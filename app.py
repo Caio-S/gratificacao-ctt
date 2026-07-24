@@ -1,5 +1,9 @@
 from datetime import date
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 import openpyxl
 from flask import Flask, jsonify, render_template, request
 
@@ -115,12 +119,13 @@ def seed_demo():
 
 @app.route("/api/dados", methods=["GET"])
 def get_dados():
+    d = data_store.get_dados_bundle()
     return jsonify({
-        "funcionarios": [_funcionario_json(f) for f in data_store.get_funcionarios()],
-        "pesagens": [_pesagem_json(p) for p in data_store.get_pesagens()],
-        "frotas": data_store.get_frotas(),
-        "periodo": data_store.get_periodo(),
-        "diasBase": data_store.get_dias_base(),
+        "funcionarios": [_funcionario_json(f) for f in d["funcionarios"]],
+        "pesagens": [_pesagem_json(p) for p in d["pesagens"]],
+        "frotas": d["frotas"],
+        "periodo": d["periodo"],
+        "diasBase": d["dias_base"],
     })
 
 
@@ -184,22 +189,43 @@ def _agregado_json(k):
 
 @app.route("/api/calculo", methods=["GET"])
 def get_calculo():
-    inicio = parse_data(data_store.get_periodo()["inicio"])
-    fim = parse_data(data_store.get_periodo()["fim"])
+    d = data_store.get_calculo_inputs()
+    inicio = parse_data(d["periodo"]["inicio"])
+    fim = parse_data(d["periodo"]["fim"])
     if not inicio or not fim:
         return jsonify({"error": "Período inválido."}), 400
     resultado = calculo.calcular(
-        data_store.get_funcionarios(),
-        data_store.get_pesagens(),
+        d["funcionarios"],
+        d["pesagens"],
         inicio,
         fim,
-        data_store.get_dias_base(),
-        data_store.get_parametros(),
+        d["dias_base"],
+        d["parametros"],
+        d["ajustes"],
     )
     return jsonify({
         "lista": [_agregado_json(k) for k in resultado["lista"]],
         "nSem": resultado["nSem"],
     })
+
+
+@app.route("/api/ajuste/<mat>", methods=["PUT"])
+def set_ajuste(mat):
+    payload = request.get_json(force=True)
+    pct = payload.get("pct")
+    obs = (payload.get("obs") or "").strip()
+    if pct is None:
+        return jsonify({"error": "Informe o percentual do ajuste."}), 400
+    if not obs:
+        return jsonify({"error": "Informe a observação justificando o ajuste."}), 400
+    data_store.set_ajuste(mat, float(pct), obs)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/ajuste/<mat>", methods=["DELETE"])
+def remover_ajuste(mat):
+    data_store.remover_ajuste(mat)
+    return "", 204
 
 
 if __name__ == "__main__":

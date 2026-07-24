@@ -48,6 +48,18 @@ def _valor_pesagem(pesagem, parametros):
     return pesagem["peso"] * rate
 
 
+def _dias_trabalhados_periodo(admissao, periodo_inicio, periodo_fim, dias_base):
+    """Dias efetivamente trabalhados dentro do periodo, considerando a data de
+    admissao (so exibicao - nao entra na formula de prorata da gratificacao,
+    que continua usando o campo 'dias' vindo da planilha/dias-base)."""
+    if not admissao:
+        return dias_base
+    inicio_efetivo = max(admissao, periodo_inicio)
+    if inicio_efetivo > periodo_fim:
+        return 0
+    return min(dias_base, (periodo_fim - inicio_efetivo).days + 1)
+
+
 def _novo_agregado(base):
     return {
         **base,
@@ -63,9 +75,10 @@ def _novo_agregado(base):
     }
 
 
-def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, parametros):
+def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, parametros, ajustes=None):
     """Tt: agrega pesagens por colaborador e calcula a gratificacao de cada um.
     Devolve {"lista": [...], "nSem": N}."""
+    ajustes = ajustes or {}
     parametros = dict(parametros)
     parametros["_diasBase"] = dias_base
     especialidades = parametros["especialidades"]
@@ -202,10 +215,16 @@ def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, par
         else:
             base = min(M, k["teto"]) if aplicar_teto else M
             gratif = base * (min(k["dias"], dias_base) / dias_base if dias_base else 0)
+        ajuste = ajustes.get(k["mat"])
+        if ajuste and ajuste.get("pct"):
+            k["ajustePct"] = ajuste["pct"]
+            k["ajusteObs"] = ajuste.get("obs", "")
+            gratif += (ajuste["pct"] / 100) * k["teto"]
         k["gratif"] = gratif
         k["atingPct"] = gratif / k["teto"] if k["teto"] else 0
         k["totalReceber"] = k["sal"] + gratif
         k["kmMed"] = k["kmSoma"] / k["viagens"] if k["viagens"] else 0
+        k["diasTrabalhados"] = _dias_trabalhados_periodo(k.get("admissao"), periodo_inicio, periodo_fim, dias_base)
         resultado.append(k)
 
     lista = [k for k in resultado if k["espec"] in ("CAMINHAO", "BATE-VOLTA", "COLHEDORA", "TRANSBORDO")]
