@@ -22,6 +22,7 @@ const state = {
   filtroCalculo: { busca: '', apenasComProducao: true, especialidade: 'TODOS', departamento: 'TODOS', detalheAberto: null },
   filtroSemanal: { semana: 'TODAS', departamento: 'TODOS' },
   filtroDiretoria: { especialidade: 'TODOS', departamento: 'TODOS' },
+  filtroAprovacoes: { busca: '', especialidade: 'TODOS', departamento: 'TODOS', soComAjuste: false },
 };
 
 /* dados carregados do backend (funcionarios/pesagens/frotas/periodo) */
@@ -121,7 +122,7 @@ function showAviso(tipo, txt) {
 }
 
 /* =============== navegacao =============== */
-const VIEWS_QUE_USAM_CALCULO = new Set(['calculo', 'semanal', 'diretoria', 'extrato']);
+const VIEWS_QUE_USAM_CALCULO = new Set(['calculo', 'semanal', 'diretoria', 'extrato', 'aprovacoes']);
 async function setView(v) {
   state.view = v;
   document.querySelectorAll('.aba').forEach(b => b.classList.toggle('ativa', b.dataset.v === v));
@@ -1113,6 +1114,19 @@ function renderRejeitarModal() {
     </div>`;
 }
 
+function gratificacoesFiltradas() {
+  const f = state.filtroAprovacoes;
+  const lista = CALC ? CALC.lista : [];
+  return lista
+    .filter(k =>
+      (!f.soComAjuste || k.ajustePct) &&
+      (f.especialidade === 'TODOS' || k.espec === f.especialidade) &&
+      (f.departamento === 'TODOS' || (k.departamento || 'Não informado') === f.departamento) &&
+      (!f.busca || norm(k.nome).includes(norm(f.busca)) || String(k.mat).includes(f.busca))
+    )
+    .sort((a, b) => (b.ajustePct || 0) - (a.ajustePct || 0));
+}
+
 function renderAprovacoes() {
   if (!podeAprovar()) return placeholder('Aprovações pendentes');
   const meuPapel = USUARIO.papel;
@@ -1153,10 +1167,74 @@ function renderAprovacoes() {
         </table>
       </div>
     </div>
+    ${renderGratificacoesTabela()}
     ${renderRejeitarModal()}`;
+}
+function renderGratificacoesTabela() {
+  if (!CALC) return '';
+  const f = state.filtroAprovacoes;
+  const departamentos = [...new Set(CALC.lista.map(k => k.departamento || 'Não informado'))].sort();
+  const lista = gratificacoesFiltradas();
+  const linhasGratif = lista.map(k => `
+    <tr>
+      <td class="mono">${esc(k.mat)}</td>
+      <td>${state.exibirNomes ? esc(k.nome) : `Colaborador ${esc(k.mat)}`}</td>
+      <td class="tag-sem">${esc(k.departamento || 'Não informado')}</td>
+      <td>${badgeEspec(k.espec)}</td>
+      <td class="num" style="font-weight:600">${numBR(k.gratif)}</td>
+      <td class="num">${k.ajustePct ? `<span style="color:var(--azul);font-weight:600" title="${esc(k.ajusteObs || '')}">+${numBR(k.ajustePct, 1)}%</span>` : '<span style="color:var(--muted)">—</span>'}</td>
+      <td class="num">${numBR(k.atingPct * 100, 1)}%</td>
+      <td class="num" style="font-weight:600">${numBR(k.totalReceber)}</td>
+    </tr>`).join('');
+
+  return `
+    <div class="cartao">
+      <div class="linha-form" style="justify-content:space-between">
+        <div>
+          <h2 style="margin:0">Gratificações por colaborador</h2>
+          <div class="dica" style="margin:4px 0 0">Todos os colaboradores do período. Use os filtros pra achar rápido quem tem ajuste manual aplicado (gratificação a mais além da produção).</div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <input id="aprovBusca" placeholder="Buscar nome ou matrícula…" value="${esc(f.busca)}" style="width:200px">
+          <select id="aprovEspec">
+            <option value="TODOS" ${f.especialidade === 'TODOS' ? 'selected' : ''}>Todas especialidades</option>
+            <option value="CAMINHAO" ${f.especialidade === 'CAMINHAO' ? 'selected' : ''}>Caminhão canavieiro</option>
+            <option value="BATE-VOLTA" ${f.especialidade === 'BATE-VOLTA' ? 'selected' : ''}>Bate e volta</option>
+            <option value="COLHEDORA" ${f.especialidade === 'COLHEDORA' ? 'selected' : ''}>Operador colhedora</option>
+            <option value="TRANSBORDO" ${f.especialidade === 'TRANSBORDO' ? 'selected' : ''}>Operador transbordo</option>
+          </select>
+          <select id="aprovDepto">
+            <option value="TODOS" ${f.departamento === 'TODOS' ? 'selected' : ''}>Todos os departamentos</option>
+            ${departamentos.map(d => `<option value="${esc(d)}" ${f.departamento === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}
+          </select>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;white-space:nowrap">
+            <input type="checkbox" id="aprovSoAjuste" ${f.soComAjuste ? 'checked' : ''}> Só com ajuste manual
+          </label>
+        </div>
+      </div>
+      <div class="scroll-x">
+        <table>
+          <thead><tr>
+            <th>Mat.</th><th>Colaborador</th><th>Departamento</th><th>Espec.</th>
+            <th class="num">Gratificação (R$)</th><th class="num">Ajuste manual</th><th class="num">% Atingido</th><th class="num">Total (R$)</th>
+          </tr></thead>
+          <tbody>${linhasGratif || '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">Nenhum colaborador encontrado com esses filtros.</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>`;
 }
 function wireAprovacoes() {
   if (!podeAprovar()) return;
+  const fg = state.filtroAprovacoes;
+  const aprovBusca = $('#aprovBusca');
+  if (aprovBusca) aprovBusca.oninput = e => { fg.busca = e.target.value; renderPreservandoFoco(); };
+  const aprovEspec = $('#aprovEspec');
+  if (aprovEspec) aprovEspec.onchange = e => { fg.especialidade = e.target.value; render(); };
+  const aprovDepto = $('#aprovDepto');
+  if (aprovDepto) aprovDepto.onchange = e => { fg.departamento = e.target.value; render(); };
+  const aprovSoAjuste = $('#aprovSoAjuste');
+  if (aprovSoAjuste) aprovSoAjuste.onchange = e => { fg.soComAjuste = e.target.checked; render(); };
+
   const chkTodos = $('#chkTodos');
   if (chkTodos) chkTodos.onchange = e => {
     document.querySelectorAll('.chkAprovar:not(:disabled)').forEach(c => { c.checked = e.target.checked; });
