@@ -74,7 +74,7 @@ input[type=number]{font-family:'IBM Plex Mono';width:90px}
 .rodape{color:var(--muted);font-size:11.5px;padding:8px 28px 24px;max-width:1280px;margin:0 auto}
 .scroll-x{overflow-x:auto}
 .scroll-x.tabela-calc{max-height:68vh;overflow-y:auto}
-.tabela-calc table{border-collapse:separate;border-spacing:0;table-layout:fixed;width:auto}
+.tabela-calc table{border-collapse:separate;border-spacing:0;table-layout:fixed;width:1685px}
 .tabela-calc th{padding:6px 5px;font-size:10px}
 .tabela-calc td{padding:5px 5px;font-size:12px;overflow-wrap:break-word}
 .tabela-calc td.num,.tabela-calc th.num{font-size:11.5px}
