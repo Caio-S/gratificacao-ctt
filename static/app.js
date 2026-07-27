@@ -169,15 +169,6 @@ function semanasDoPeriodo() {
   }
   return semanas;
 }
-function diasDecorridos() {
-  const diasTotais = diasNoPeriodo(DADOS.periodo.inicio, DADOS.periodo.fim);
-  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
-  const inicio = new Date(DADOS.periodo.inicio + 'T00:00:00');
-  const fim = new Date(DADOS.periodo.fim + 'T00:00:00');
-  if (hoje < inicio) return 0;
-  if (hoje > fim) return diasTotais;
-  return Math.round((hoje - inicio) / 86400000) + 1;
-}
 
 function exportarCsvSemanal() {
   const yt = semanasDoPeriodo();
@@ -203,13 +194,10 @@ function renderSemanal() {
   const semanasVisiveis = f.semana === 'TODAS' ? todasSemanas : todasSemanas.filter(s => String(s.idx) === f.semana);
   const departamentos = [...new Set(CALC.lista.map(k => k.departamento || 'Não informado'))].sort();
   const lista = CALC.lista.filter(k => k.viagens > 0 && (f.departamento === 'TODOS' || (k.departamento || 'Não informado') === f.departamento));
-  const diasTotais = diasNoPeriodo(DADOS.periodo.inicio, DADOS.periodo.fim);
-  const decorridos = diasDecorridos();
-  const baseProjecao = decorridos > 0 ? decorridos : diasTotais;
 
   const linhas = lista.map(k => {
-    const projecaoTon = decorridos > 0 && decorridos < diasTotais ? k.ton / baseProjecao * diasTotais : k.ton;
     const metaSemanal = CALC.nSem ? k.teto / CALC.nSem : 0;
+    const pctGratif = k.atingPct * 100;
     return `
       <tr>
         <td class="mono">${esc(k.mat)}</td>
@@ -220,10 +208,10 @@ function renderSemanal() {
           const sem = k.semanas[String(s.idx)];
           if (!sem) return '<td class="num"><span style="color:var(--muted)">—</span></td>';
           const pct = metaSemanal ? sem.valor / metaSemanal * 100 : 0;
-          return `<td class="num"><span style="font-weight:600${pct > 100 ? ';color:var(--ambar)' : ''}">${numBR(pct, 1)}%</span><div class="tag-sem">${numBR(sem.ton, 0)} t</div></td>`;
+          return `<td class="num"><span style="font-weight:600${pct > 100 ? ';color:var(--ambar)' : ''}">${numBR(pct, 1)}%</span></td>`;
         }).join('')}
         <td class="num">${numBR(k.ton, 0)}</td>
-        <td class="num" style="font-weight:600">${numBR(projecaoTon, 0)}</td>
+        <td class="num" style="font-weight:600${pctGratif > 100 ? ';color:var(--ambar)' : ''}">${numBR(pctGratif, 1)}%</td>
       </tr>`;
   }).join('');
 
@@ -232,7 +220,7 @@ function renderSemanal() {
       <div class="linha-form" style="justify-content:space-between">
         <div>
           <h2 style="margin:0">Acompanhamento semanal</h2>
-          <div class="dica" style="margin:4px 0 0">Toneladas de cada semana isolada (não acumulado) e % em relação à meta daquela semana (teto do período ÷ número de semanas) (${brDate(DADOS.periodo.inicio)} a ${brDate(DADOS.periodo.fim)}). A projeção estende o ritmo atual até o fim do período.</div>
+          <div class="dica" style="margin:4px 0 0">% da gratificação de cada semana isolada (não acumulado), em relação à meta daquela semana (teto do período ÷ número de semanas) (${brDate(DADOS.periodo.inicio)} a ${brDate(DADOS.periodo.fim)}).</div>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
           <select id="semSemana">
@@ -252,7 +240,7 @@ function renderSemanal() {
           <thead><tr>
             <th>Mat.</th><th>Colaborador</th><th>Departamento</th><th>Espec.</th>
             ${semanasVisiveis.map(s => `<th class="num">${s.rotulo}<div class="tag-sem">${s.faixa}</div></th>`).join('')}
-            <th class="num">Ton acum.</th><th class="num">Total de tonelada</th>
+            <th class="num">Ton acum.</th><th class="num">% Gratificação</th>
           </tr></thead>
           <tbody>${linhas || `<tr><td colspan="${6 + semanasVisiveis.length}" style="text-align:center;padding:24px;color:var(--muted)">Sem dados no período.</td></tr>`}</tbody>
         </table>
