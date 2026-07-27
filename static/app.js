@@ -1083,6 +1083,11 @@ function wireCalculo() {
 }
 
 /* =============== aba: aprovacoes pendentes =============== */
+function nomeColaboradorPorMat(mat) {
+  const f = (DADOS.funcionarios || []).find(x => String(x.mat) === String(mat));
+  return f ? f.nome : '—';
+}
+
 function renderRejeitarModal() {
   const id = state.rejeitarId;
   if (!id) return '';
@@ -1092,7 +1097,7 @@ function renderRejeitarModal() {
     <div class="modal-ov no-print" id="rejeitarModalOv">
       <div class="modal-box" id="rejeitarModalBox">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-          <h3>Rejeitar sugestão — ${esc(a.mat)}</h3>
+          <h3>Rejeitar sugestão — ${esc(a.mat)} · ${esc(nomeColaboradorPorMat(a.mat))}</h3>
           <button class="modal-fecha" id="rejeitarModalFechar">×</button>
         </div>
         <div class="dica">Sugestão de +${numBR(a.pct, 1)}% por ${esc(a.criadoPor)}: "${esc(a.obs)}"</div>
@@ -1117,6 +1122,7 @@ function renderAprovacoes() {
       <tr>
         <td><input type="checkbox" class="chkAprovar" value="${a.id}" ${jaAprovouEu ? 'disabled checked' : ''}></td>
         <td class="mono">${esc(a.mat)}</td>
+        <td>${esc(nomeColaboradorPorMat(a.mat))}</td>
         <td class="num" style="font-weight:600;color:var(--azul)">+${numBR(a.pct, 1)}%</td>
         <td style="max-width:280px">${esc(a.obs)}</td>
         <td class="tag-sem">${esc(a.criadoPor)}<br>${a.criadoEm ? brDate(a.criadoEm.slice(0, 10)) : ''}</td>
@@ -1141,9 +1147,9 @@ function renderAprovacoes() {
         <table>
           <thead><tr>
             <th><input type="checkbox" id="chkTodos"></th>
-            <th>Mat.</th><th class="num">Ajuste</th><th>Observação</th><th>Sugerido por</th><th>Aprovações</th><th>Ação</th>
+            <th>Mat.</th><th>Colaborador</th><th class="num">Ajuste</th><th>Observação</th><th>Sugerido por</th><th>Aprovações</th><th>Ação</th>
           </tr></thead>
-          <tbody>${linhas || '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">Nenhum ajuste pendente.</td></tr>'}</tbody>
+          <tbody>${linhas || '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">Nenhum ajuste pendente.</td></tr>'}</tbody>
         </table>
       </div>
     </div>
