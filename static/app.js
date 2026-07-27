@@ -1010,10 +1010,10 @@ function tabelaCalculo(lista) {
     <div class="scroll-x tabela-calc">
       <table>
         <thead><tr>
-          <th>Mat.</th><th>Colaborador</th><th>Departamento</th><th>Admissão</th><th>Espec.</th>
-          <th class="num">Dias</th><th class="num">Dias trabalhados</th><th class="num">Viagens</th><th class="num">Ton</th><th class="num">Km méd.</th>
-          <th>Frotas / disponib.</th><th class="num">Salário base</th><th class="num">Gratificação (R$)</th>
-          <th class="num">Teto (R$)</th><th>% Atingido</th><th class="num">Total (R$)</th><th class="col-acoes">Ações</th>
+          <th style="width:65px">Mat.</th><th style="width:160px">Colaborador</th><th style="width:150px">Departamento</th><th style="width:75px">Admissão</th><th style="width:90px">Espec.</th>
+          <th class="num" style="width:45px">Dias</th><th class="num" style="width:95px">Dias trabalhados</th><th class="num" style="width:60px">Viagens</th><th class="num" style="width:70px">Ton</th><th class="num" style="width:65px">Km méd.</th>
+          <th style="width:150px">Frotas / disponib.</th><th class="num" style="width:85px">Salário base</th><th class="num" style="width:95px">Gratificação (R$)</th>
+          <th class="num" style="width:75px">Teto (R$)</th><th style="width:120px">% Atingido</th><th class="num" style="width:90px">Total (R$)</th><th class="col-acoes" style="width:195px">Ações</th>
         </tr></thead>
         <tbody>${lista.map(linhaCalculo).join('')}</tbody>
       </table>
