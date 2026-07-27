@@ -219,7 +219,7 @@ function renderSemanal() {
   const baseProjecao = decorridos > 0 ? decorridos : diasTotais;
 
   const linhas = lista.map(k => {
-    const projecao = decorridos > 0 && decorridos < diasTotais ? k['prodR$'] / baseProjecao * diasTotais : k['prodR$'];
+    const projecaoTon = decorridos > 0 && decorridos < diasTotais ? k.ton / baseProjecao * diasTotais : k.ton;
     const acc = acumuladosSemana(k, CALC.nSem);
     return `
       <tr>
@@ -234,7 +234,7 @@ function renderSemanal() {
           return `<td class="num"><span style="font-weight:600${pct > 100 ? ';color:var(--ambar)' : ''}">${numBR(pct, 1)}%</span><div class="tag-sem">${numBR(a.tonAcum, 0)} t</div></td>`;
         }).join('')}
         <td class="num">${numBR(k.ton, 0)}</td>
-        <td class="num" style="color:${projecao >= k.teto ? 'var(--verde)' : 'var(--ambar)'};font-weight:600">${numBR(k.teto ? projecao / k.teto * 100 : 0, 1)}%</td>
+        <td class="num" style="font-weight:600">${numBR(projecaoTon, 0)}</td>
       </tr>`;
   }).join('');
 
@@ -263,7 +263,7 @@ function renderSemanal() {
           <thead><tr>
             <th>Mat.</th><th>Colaborador</th><th>Departamento</th><th>Espec.</th>
             ${semanasVisiveis.map(s => `<th class="num">${s.rotulo}<div class="tag-sem">${s.faixa}</div></th>`).join('')}
-            <th class="num">Ton acum.</th><th class="num">Projeção fim (%)</th>
+            <th class="num">Ton acum.</th><th class="num">Total de tonelada</th>
           </tr></thead>
           <tbody>${linhas || `<tr><td colspan="${6 + semanasVisiveis.length}" style="text-align:center;padding:24px;color:var(--muted)">Sem dados no período.</td></tr>`}</tbody>
         </table>
