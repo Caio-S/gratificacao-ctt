@@ -23,6 +23,8 @@ const state = {
   filtroSemanal: { semana: 'TODAS', departamento: 'TODOS' },
   filtroDiretoria: { especialidade: 'TODOS', departamento: 'TODOS' },
   filtroAprovacoes: { busca: '', especialidade: 'TODOS', departamento: 'TODOS', soComAjuste: false },
+  extratoRelatorioModalAberto: false,
+  extratoRelatorioIntervalo: null,
 };
 
 /* dados carregados do backend (funcionarios/pesagens/frotas/periodo) */
@@ -432,6 +434,9 @@ function renderExtrato() {
   const referenciaDia = km => me.espec === 'COLHEDORA' ? PARAMS.tetoColhedora.metaDia
     : me.espec === 'TRANSBORDO' ? PARAMS.tetoTransbordo.metaDia
     : tonReferencia(km, tabelaNome);
+  if (state.extratoRelatorioIntervalo) {
+    return renderRelatorioDetalhado(me, referenciaDia);
+  }
   const especLabelFull = { CAMINHAO: 'Caminhão canavieiro', 'BATE-VOLTA': 'Caminhão bate e volta', COLHEDORA: 'Colhedora de cana', TRANSBORDO: 'Trator transbordo' }[me.espec] || me.espec;
   const producaoBruta = me['prodR$'];
   const faltaTeto = Math.max(0, me.teto - me.gratif);
@@ -502,7 +507,10 @@ function renderExtrato() {
           ${pe.map(k => `<option value="${esc(k.mat)}" ${k.mat === me.mat ? 'selected' : ''}>${esc(k.mat)}${state.exibirNomes ? ' — ' + esc(k.nome) : ''} · ${ESPEC_LABEL[k.espec] || esc(k.espec)}</option>`).join('')}
         </select>
       </div>
-      <button class="btn" id="btnImprimirExtrato">Imprimir extrato / PDF</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn sec" id="btnRelatorioDetalhado">📅 Relatório detalhado</button>
+        <button class="btn" id="btnImprimirExtrato">Imprimir extrato / PDF</button>
+      </div>
     </div>
 
     <div class="cartao">
@@ -585,13 +593,123 @@ function renderExtrato() {
       </div>` : ''}
       <div class="tag-sem" style="margin-top:12px">Documento individual de conferência do colaborador · produção valorizada por pesagem conforme tabela vigente (R$/t × faixa de km) · gratificação proporcional aos dias trabalhados (base ${diasBase}) · valores não incluem horas extras e DSR · fechamento no dia 15.</div>
     </div>
-    ${modal}`;
+    ${modal}
+    ${renderRelatorioSelecaoModal()}`;
 }
+
+function todosDiasColaborador(me) {
+  const dias = {};
+  Object.values(me.semanas || {}).forEach(sem => {
+    Object.entries(sem.dias || {}).forEach(([iso, d]) => { dias[iso] = d; });
+  });
+  return dias;
+}
+
+function renderRelatorioSelecaoModal() {
+  if (!state.extratoRelatorioModalAberto) return '';
+  const min = DADOS.periodo.inicio, max = DADOS.periodo.fim;
+  return `
+    <div class="modal-ov no-print" id="relatorioSelecaoOv">
+      <div class="modal-box" id="relatorioSelecaoBox">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <h3>Relatório detalhado por período</h3>
+          <button class="modal-fecha" id="relatorioSelecaoFechar">×</button>
+        </div>
+        <div class="dica">Escolha um único dia ou um intervalo (ex.: 4 ou 5 dias de uma semana específica) dentro do período de apuração (${brDate(min)} a ${brDate(max)}) para gerar um relatório detalhado pronto para impressão.</div>
+        <div class="linha-form" style="margin-top:10px">
+          <div class="campo"><label>De</label><input type="date" id="relatorioDataInicio" min="${min}" max="${max}" value="${min}"></div>
+          <div class="campo"><label>Até</label><input type="date" id="relatorioDataFim" min="${min}" max="${max}" value="${max}"></div>
+        </div>
+        <div class="linha-form" style="margin-top:14px;justify-content:flex-end">
+          <button class="btn sec" id="relatorioSelecaoCancelar">Cancelar</button>
+          <button class="btn" id="relatorioSelecaoGerar">Gerar relatório</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderRelatorioDetalhado(me, referenciaDia) {
+  const { inicio, fim } = state.extratoRelatorioIntervalo;
+  const especLabelFull = { CAMINHAO: 'Caminhão canavieiro', 'BATE-VOLTA': 'Caminhão bate e volta', COLHEDORA: 'Colhedora de cana', TRANSBORDO: 'Trator transbordo' }[me.espec] || me.espec;
+  const diasFiltrados = Object.entries(todosDiasColaborador(me))
+    .filter(([iso]) => iso >= inicio && iso <= fim)
+    .sort((a, b) => a[0] < b[0] ? -1 : 1);
+
+  const totais = diasFiltrados.reduce((acc, [, d]) => {
+    acc.viagens += d.viagens; acc.ton += d.ton; acc.valor += d.valor; acc.km += d.km;
+    return acc;
+  }, { viagens: 0, ton: 0, valor: 0, km: 0 });
+
+  const linhasDias = diasFiltrados.map(([iso, d]) => {
+    const raioMed = d.viagens ? d.km / d.viagens : 0;
+    return `
+      <tr>
+        <td>${dataCurta(new Date(iso + 'T00:00:00'))}</td>
+        <td class="num">${d.viagens}</td>
+        <td class="num">${d.viagens ? numBR(raioMed, 0) : '—'}</td>
+        <td class="num">${numBR(d.ton, 1)}</td>
+        <td class="num">${d.ton ? numBR(d.valor / d.ton, 4) : '—'}</td>
+        <td class="num" style="font-weight:600">${numBR(d.valor)}</td>
+        <td class="num tag-sem">${d.viagens ? numBR(referenciaDia(raioMed), 0) : '—'}</td>
+      </tr>`;
+  }).join('');
+  const raioMedTotal = totais.viagens ? totais.km / totais.viagens : 0;
+  const rotuloPeriodo = inicio === fim ? brDate(inicio) : `${brDate(inicio)} a ${brDate(fim)}`;
+
+  return `
+    <div class="linha-form no-print" style="justify-content:space-between">
+      <button class="btn sec" id="btnVoltarExtrato">← Voltar ao extrato</button>
+      <button class="btn" id="btnImprimirRelatorioDetalhado">Imprimir relatório</button>
+    </div>
+    <div class="cartao">
+      <div class="recibo-topo">
+        <div>
+          <div class="idc">Matrícula ${esc(me.mat)}</div>
+          ${state.exibirNomes ? `<div style="font-weight:600;margin-top:2px">${esc(me.nome)}</div>` : ''}
+          <div class="tag-sem" style="margin-top:4px">${esc(especLabelFull)}${me.funcao ? ' · ' + esc(me.funcao) : ''}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-family:'Barlow Condensed';font-weight:700;font-size:20px;color:var(--verde-esc);text-transform:uppercase;letter-spacing:.6px">Relatório detalhado</div>
+          <div class="tag-sem">${rotuloPeriodo} · ${diasFiltrados.length} dia${diasFiltrados.length !== 1 ? 's' : ''} com produção</div>
+        </div>
+      </div>
+      <div class="dica" style="margin-top:10px">Detalhe diário de viagens, raio médio e toneladas carregadas no período selecionado. Validação: R$/t unitário × toneladas = valor do dia. "Ton/dia padrão" é o valor esperado para o raio do dia, conforme a tabela de referência de precificação.</div>
+      <div class="scroll-x" style="margin-top:10px">
+        <table>
+          <thead><tr><th>Dia</th><th class="num">Viagens</th><th class="num">Raio méd. (km)</th><th class="num">Toneladas</th><th class="num">R$/t unitário</th><th class="num">Valor (R$)</th><th class="num">Ton/dia padrão</th></tr></thead>
+          <tbody>
+            ${linhasDias || '<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--muted)">Sem viagens registradas nesse período.</td></tr>'}
+            ${diasFiltrados.length ? `
+            <tr style="font-weight:600;border-top:2px solid var(--verde)">
+              <td>Total</td>
+              <td class="num">${totais.viagens}</td>
+              <td class="num">${totais.viagens ? numBR(raioMedTotal, 0) : '—'}</td>
+              <td class="num">${numBR(totais.ton, 1)}</td>
+              <td class="num">${totais.ton ? numBR(totais.valor / totais.ton, 4) : '—'}</td>
+              <td class="num">${numBR(totais.valor)}</td>
+              <td class="num tag-sem">${totais.viagens ? numBR(referenciaDia(raioMedTotal), 0) : '—'}</td>
+            </tr>` : ''}
+          </tbody>
+        </table>
+      </div>
+      <div class="tag-sem" style="margin-top:12px">Relatório gerado a partir do extrato do colaborador · matrícula ${esc(me.mat)} · período de apuração completo ${brDate(DADOS.periodo.inicio)} a ${brDate(DADOS.periodo.fim)}.</div>
+    </div>`;
+}
+
 function wireExtrato() {
+  if (state.extratoRelatorioIntervalo) {
+    const btnVoltar = $('#btnVoltarExtrato');
+    if (btnVoltar) btnVoltar.onclick = () => { state.extratoRelatorioIntervalo = null; render(); };
+    const btnImprimirRel = $('#btnImprimirRelatorioDetalhado');
+    if (btnImprimirRel) btnImprimirRel.onclick = () => window.print();
+    return;
+  }
   const select = $('#extratoSelect');
   if (select) select.onchange = e => { state.extratoMat = e.target.value; state.extratoSemanaAberta = null; render(); };
   const btnImprimir = $('#btnImprimirExtrato');
   if (btnImprimir) btnImprimir.onclick = () => window.print();
+  const btnRelatorio = $('#btnRelatorioDetalhado');
+  if (btnRelatorio) btnRelatorio.onclick = () => { state.extratoRelatorioModalAberto = true; render(); };
   $('#main').querySelectorAll('[data-semana-idx]').forEach(tr => {
     tr.onclick = () => { state.extratoSemanaAberta = +tr.dataset.semanaIdx; render(); };
   });
@@ -600,6 +718,23 @@ function wireExtrato() {
     ov.onclick = () => { state.extratoSemanaAberta = null; render(); };
     $('#extratoModalBox').onclick = e => e.stopPropagation();
     $('#extratoModalFechar').onclick = () => { state.extratoSemanaAberta = null; render(); };
+  }
+  const ovSel = $('#relatorioSelecaoOv');
+  if (ovSel) {
+    const fecharSel = () => { state.extratoRelatorioModalAberto = false; render(); };
+    ovSel.onclick = fecharSel;
+    $('#relatorioSelecaoBox').onclick = e => e.stopPropagation();
+    $('#relatorioSelecaoFechar').onclick = fecharSel;
+    $('#relatorioSelecaoCancelar').onclick = fecharSel;
+    $('#relatorioSelecaoGerar').onclick = () => {
+      const inicio = $('#relatorioDataInicio').value;
+      const fim = $('#relatorioDataFim').value;
+      if (!inicio || !fim) { showToast('erro', 'Escolha as duas datas.'); return; }
+      if (inicio > fim) { showToast('erro', 'A data inicial não pode ser depois da final.'); return; }
+      state.extratoRelatorioModalAberto = false;
+      state.extratoRelatorioIntervalo = { inicio, fim };
+      render();
+    };
   }
 }
 
