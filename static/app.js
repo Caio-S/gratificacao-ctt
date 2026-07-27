@@ -15,7 +15,6 @@ const state = {
   extratoMat: null,
   extratoSemanaAberta: null,
   ajusteModalMat: null,
-  rejeitarId: null,
   filtroAprovStatus: 'TODOS',
   /* cada aba com filtro proprio tem seu objeto isolado — nao ha estado de
      filtro global compartilhado entre abas (evita o painel da diretoria, ou
@@ -30,7 +29,6 @@ const state = {
 let DADOS = { funcionarios: [], pesagens: [], frotas: [], periodo: { inicio: null, fim: null }, diasBase: 25 };
 let PARAMS = null;
 let CALC = null;
-let AJUSTES_PENDENTES = [];
 let USUARIOS_LISTA = [];
 let GRATIF_APROVACOES = {};
 
@@ -56,10 +54,6 @@ async function carregarParametros() {
 
 async function carregarCalculo() {
   CALC = await api('/calculo');
-}
-
-async function carregarAjustesPendentes() {
-  AJUSTES_PENDENTES = await api('/ajustes-pendentes');
 }
 
 async function carregarAprovacoesGratificacao() {
@@ -139,7 +133,7 @@ async function setView(v) {
     try { await carregarCalculo(); } catch (e) { showAviso('erro', 'Falha ao calcular: ' + e.message); }
   }
   if (v === 'aprovacoes') {
-    try { await Promise.all([carregarAjustesPendentes(), carregarAprovacoesGratificacao()]); } catch (e) { showAviso('erro', 'Falha ao carregar aprovações: ' + e.message); }
+    try { await carregarAprovacoesGratificacao(); } catch (e) { showAviso('erro', 'Falha ao carregar aprovações: ' + e.message); }
   }
   if (v === 'usuarios') {
     try { await carregarUsuarios(); } catch (e) { showAviso('erro', 'Falha ao carregar usuários: ' + e.message); }
@@ -1089,37 +1083,7 @@ function wireCalculo() {
   }
 }
 
-/* =============== aba: aprovacoes pendentes =============== */
-function nomeColaboradorPorMat(mat) {
-  const f = (DADOS.funcionarios || []).find(x => String(x.mat) === String(mat));
-  return f ? f.nome : '—';
-}
-
-function renderRejeitarModal() {
-  const id = state.rejeitarId;
-  if (!id) return '';
-  const a = AJUSTES_PENDENTES.find(x => x.id === id);
-  if (!a) return '';
-  return `
-    <div class="modal-ov no-print" id="rejeitarModalOv">
-      <div class="modal-box" id="rejeitarModalBox">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-          <h3>Rejeitar sugestão — ${esc(a.mat)} · ${esc(nomeColaboradorPorMat(a.mat))}</h3>
-          <button class="modal-fecha" id="rejeitarModalFechar">×</button>
-        </div>
-        <div class="dica">Sugestão de +${numBR(a.pct, 1)}% por ${esc(a.criadoPor)}: "${esc(a.obs)}"</div>
-        <div class="campo" style="margin-top:10px">
-          <label>Motivo da rejeição (obrigatório)</label>
-          <textarea id="rejeitarMotivoInput" rows="3" style="width:100%;font-family:'Inter';font-size:13px;padding:8px;border:1px solid var(--linha);border-radius:5px;box-sizing:border-box"></textarea>
-        </div>
-        <div class="linha-form" style="margin-top:14px;justify-content:flex-end">
-          <button class="btn sec" id="rejeitarCancelar">Cancelar</button>
-          <button class="btn" id="rejeitarConfirmar" style="background:var(--vermelho)">Confirmar rejeição</button>
-        </div>
-      </div>
-    </div>`;
-}
-
+/* =============== aba: aprovacoes =============== */
 function gratificacoesFiltradas() {
   const f = state.filtroAprovacoes;
   const meuPapel = USUARIO.papel;
@@ -1140,47 +1104,8 @@ function gratificacoesFiltradas() {
 }
 
 function renderAprovacoes() {
-  if (!podeAprovar()) return placeholder('Aprovações pendentes');
-  const meuPapel = USUARIO.papel;
-  const linhas = AJUSTES_PENDENTES.map(a => {
-    const jaAprovouEu = meuPapel === 'gerente' ? a.aprovadoGerente : a.aprovadoDiretoria;
-    return `
-      <tr>
-        <td><input type="checkbox" class="chkAprovar" value="${a.id}" ${jaAprovouEu ? 'disabled checked' : ''}></td>
-        <td class="mono">${esc(a.mat)}</td>
-        <td>${esc(nomeColaboradorPorMat(a.mat))}</td>
-        <td class="num" style="font-weight:600;color:var(--azul)">+${numBR(a.pct, 1)}%</td>
-        <td style="max-width:280px">${esc(a.obs)}</td>
-        <td class="tag-sem">${esc(a.criadoPor)}<br>${a.criadoEm ? brDate(a.criadoEm.slice(0, 10)) : ''}</td>
-        <td>
-          <span class="tag-sem" style="color:${a.aprovadoGerente ? 'var(--verde)' : 'var(--muted)'}">${a.aprovadoGerente ? '✓' : '—'} Gerente</span><br>
-          <span class="tag-sem" style="color:${a.aprovadoDiretoria ? 'var(--verde)' : 'var(--muted)'}">${a.aprovadoDiretoria ? '✓' : '—'} Diretoria</span>
-        </td>
-        <td><button type="button" class="btn peq sec" data-rejeitar="${a.id}" style="color:var(--vermelho);border-color:var(--vermelho)">Rejeitar</button></td>
-      </tr>`;
-  }).join('');
-
-  return `
-    <div class="cartao">
-      <div class="linha-form" style="justify-content:space-between">
-        <div>
-          <h2 style="margin:0">Aprovações pendentes</h2>
-          <div class="dica" style="margin:4px 0 0">Sugestões de ajuste manual dos coordenadores, aguardando aprovação do Gerente e da Diretoria (as duas são necessárias pra valer). Marque as linhas e aprove em lote, ou rejeite individualmente com motivo.</div>
-        </div>
-        <button class="btn" id="btnAprovarSelecionados">Aprovar selecionados</button>
-      </div>
-      <div class="scroll-x">
-        <table>
-          <thead><tr>
-            <th><input type="checkbox" id="chkTodos"></th>
-            <th>Mat.</th><th>Colaborador</th><th class="num">Ajuste</th><th>Observação</th><th>Sugerido por</th><th>Aprovações</th><th>Ação</th>
-          </tr></thead>
-          <tbody>${linhas || '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">Nenhum ajuste pendente.</td></tr>'}</tbody>
-        </table>
-      </div>
-    </div>
-    ${renderGratificacoesAprovacao()}
-    ${renderRejeitarModal()}`;
+  if (!podeAprovar()) return placeholder('Aprovações');
+  return renderGratificacoesAprovacao();
 }
 function renderGratificacoesAprovacao() {
   if (!CALC) return '';
@@ -1265,49 +1190,6 @@ function wireAprovacoes() {
   if (aprovSoAjuste) aprovSoAjuste.onchange = e => { fg.soComAjuste = e.target.checked; render(); };
   const aprovStatusFiltro = $('#aprovStatusFiltro');
   if (aprovStatusFiltro) aprovStatusFiltro.onchange = e => { state.filtroAprovStatus = e.target.value; render(); };
-
-  const chkTodos = $('#chkTodos');
-  if (chkTodos) chkTodos.onchange = e => {
-    document.querySelectorAll('.chkAprovar:not(:disabled)').forEach(c => { c.checked = e.target.checked; });
-  };
-  const btnAprovar = $('#btnAprovarSelecionados');
-  if (btnAprovar) btnAprovar.onclick = async () => {
-    const ids = [...document.querySelectorAll('.chkAprovar:checked:not(:disabled)')].map(c => +c.value);
-    if (!ids.length) { showToast('erro', 'Selecione ao menos um ajuste.'); return; }
-    setBtnLoading(btnAprovar, true);
-    try {
-      const r = await api('/ajustes-pendentes/aprovar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) });
-      await carregarAjustesPendentes();
-      render();
-      showToast('ok', r.aplicados.length ? `${r.aplicados.length} ajuste(s) aprovado(s) e já aplicado(s) (segunda aprovação recebida).` : 'Sua aprovação foi registrada — falta a aprovação do outro papel para aplicar.');
-    } catch (e) { showToast('erro', e.message); }
-    finally { setBtnLoading(btnAprovar, false); }
-  };
-  document.querySelectorAll('[data-rejeitar]').forEach(btn => {
-    btn.onclick = () => { state.rejeitarId = +btn.dataset.rejeitar; render(); };
-  });
-  const ov = $('#rejeitarModalOv');
-  if (ov) {
-    const fechar = () => { state.rejeitarId = null; render(); };
-    ov.onclick = fechar;
-    $('#rejeitarModalBox').onclick = e => e.stopPropagation();
-    $('#rejeitarModalFechar').onclick = fechar;
-    $('#rejeitarCancelar').onclick = fechar;
-    $('#rejeitarConfirmar').onclick = async () => {
-      const motivo = $('#rejeitarMotivoInput').value.trim();
-      if (!motivo) { showToast('erro', 'Informe o motivo da rejeição.'); return; }
-      const btn = $('#rejeitarConfirmar');
-      setBtnLoading(btn, true);
-      try {
-        await api(`/ajustes-pendentes/${state.rejeitarId}/rejeitar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ motivo }) });
-        state.rejeitarId = null;
-        await carregarAjustesPendentes();
-        render();
-        showToast('ok', 'Sugestão rejeitada.');
-      } catch (e) { showToast('erro', e.message); }
-      finally { setBtnLoading(btn, false); }
-    };
-  }
 
   const chkTodosGratif = $('#chkTodosGratif');
   if (chkTodosGratif) chkTodosGratif.onchange = e => {
