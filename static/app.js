@@ -661,7 +661,7 @@ function renderRelatorioDetalhado(me, referenciaDia) {
       <button class="btn sec" id="btnVoltarExtrato">← Voltar ao extrato</button>
       <button class="btn" id="btnImprimirRelatorioDetalhado">Imprimir relatório</button>
     </div>
-    <div class="cartao">
+    <div class="cartao cartao-relatorio">
       <div class="recibo-topo">
         <div>
           <div class="idc">Matrícula ${esc(me.mat)}</div>

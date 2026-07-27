@@ -179,4 +179,13 @@ tr.linha-clic:hover td{background:#EAF1E7}
   /* cartoes lado a lado (Parametros, Painel diretoria, Calculo) tambem nao
      devem empilhar na impressao */
   .grade2{grid-template-columns:1fr 1fr!important}
+
+  /* relatorio detalhado (extrato) pode ter muitos dias (periodo todo) -
+     deixa a tabela quebrar entre paginas normalmente, so evitando quebrar
+     no meio de uma linha; sem isso o .cartao{break-inside:avoid} forcava
+     o bloco inteiro pra pagina seguinte e sobravam folhas em branco */
+  .cartao-relatorio{break-inside:auto}
+  .cartao-relatorio table{break-inside:auto}
+  .cartao-relatorio thead{display:table-header-group}
+  .cartao-relatorio tr{break-inside:avoid}
 }
