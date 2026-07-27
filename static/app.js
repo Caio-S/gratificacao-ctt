@@ -208,10 +208,10 @@ function renderSemanal() {
           const sem = k.semanas[String(s.idx)];
           if (!sem) return '<td class="num"><span style="color:var(--muted)">—</span></td>';
           const pct = metaSemanal ? sem.valor / metaSemanal * 100 : 0;
-          return `<td class="num"><span style="font-weight:600${pct > 100 ? ';color:var(--ambar)' : ''}">${numBR(pct, 1)}%</span></td>`;
+          return `<td class="num"><span style="font-weight:600${pct > 100 ? ';color:var(--ambar)' : ''}">${numBR(pct, 1)}%</span><div class="tag-sem">${numBR(sem.ton, 0)} t</div></td>`;
         }).join('')}
         <td class="num">${numBR(k.ton, 0)}</td>
-        <td class="num" style="font-weight:600${pctGratif > 100 ? ';color:var(--ambar)' : ''}">${numBR(pctGratif, 1)}%</td>
+        <td class="num"><span style="font-weight:600${pctGratif > 100 ? ';color:var(--ambar)' : ''}">${numBR(pctGratif, 1)}%</span><div class="tag-sem">${numBR(k.ton, 0)} t</div></td>
       </tr>`;
   }).join('');
 
