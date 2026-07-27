@@ -984,6 +984,7 @@ function renderCalculo() {
             <option value="TODOS" ${f.departamento === 'TODOS' ? 'selected' : ''}>Todos os departamentos</option>
             ${departamentos.map(d => `<option value="${esc(d)}" ${f.departamento === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}
           </select>
+          <button class="btn sec no-print" id="btnExportarCalculoXlsx">Exportar Excel</button>
           <button class="btn no-print" id="btnExportarCalculoPdf">Exportar PDF</button>
         </div>
       </div>
@@ -1021,6 +1022,17 @@ function wireCalculo() {
   });
   const btnPdf = $('#btnExportarCalculoPdf');
   if (btnPdf) btnPdf.onclick = () => window.print();
+  const btnXlsx = $('#btnExportarCalculoXlsx');
+  if (btnXlsx) btnXlsx.onclick = () => {
+    const params = new URLSearchParams({
+      busca: f.busca,
+      apenasComProducao: f.apenasComProducao ? '1' : '0',
+      especialidade: f.especialidade,
+      departamento: f.departamento,
+      nomes: state.exibirNomes ? '1' : '0',
+    });
+    window.open('/api/calculo/exportar?' + params.toString(), '_blank');
+  };
 
   const ov = $('#ajusteModalOv');
   if (ov) {

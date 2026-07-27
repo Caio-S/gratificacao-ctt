@@ -2,19 +2,20 @@ import os
 from datetime import date, datetime
 from decimal import Decimal
 from functools import wraps
+from io import BytesIO
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
 import openpyxl
-from flask import Flask, jsonify, render_template, request, session
+from flask import Flask, jsonify, render_template, request, send_file, session
 
 import calculo
 import calculo_defaults
 import data_store
 import parsers
-from utils import parse_data
+from utils import normalizar, parse_data
 
 app = Flask(__name__)
 app.secret_key = os.environ["SECRET_KEY"]
@@ -279,27 +280,95 @@ def _agregado_json(k):
     return d
 
 
-@app.route("/api/calculo", methods=["GET"])
-@requer_login
-def get_calculo():
+def _calcular_atual():
+    """Roda calculo.calcular() com os dados/parametros/ajustes atuais. Devolve
+    None (nos dois campos) se o periodo estiver invalido."""
     d = data_store.get_calculo_inputs()
     inicio = parse_data(d["periodo"]["inicio"])
     fim = parse_data(d["periodo"]["fim"])
     if not inicio or not fim:
-        return jsonify({"error": "Período inválido."}), 400
+        return None, d
     resultado = calculo.calcular(
-        d["funcionarios"],
-        d["pesagens"],
-        inicio,
-        fim,
-        d["dias_base"],
-        d["parametros"],
-        d["ajustes"],
+        d["funcionarios"], d["pesagens"], inicio, fim, d["dias_base"], d["parametros"], d["ajustes"],
     )
+    return resultado, d
+
+
+@app.route("/api/calculo", methods=["GET"])
+@requer_login
+def get_calculo():
+    resultado, _ = _calcular_atual()
+    if resultado is None:
+        return jsonify({"error": "Período inválido."}), 400
     return jsonify({
         "lista": [_agregado_json(k) for k in resultado["lista"]],
         "nSem": resultado["nSem"],
     })
+
+
+_ESPEC_LABEL = {"CAMINHAO": "Caminhão", "BATE-VOLTA": "Bate-volta", "COLHEDORA": "Colhedora", "TRANSBORDO": "Transbordo"}
+
+
+@app.route("/api/calculo/exportar", methods=["GET"])
+@requer_login
+def exportar_calculo_xlsx():
+    resultado, d = _calcular_atual()
+    if resultado is None:
+        return jsonify({"error": "Período inválido."}), 400
+
+    busca = normalizar(request.args.get("busca", ""))
+    apenas_com_producao = request.args.get("apenasComProducao", "1") != "0"
+    especialidade = request.args.get("especialidade", "TODOS")
+    departamento = request.args.get("departamento", "TODOS")
+    exibir_nomes = request.args.get("nomes", "0") == "1"
+
+    lista = [
+        k for k in resultado["lista"]
+        if (not apenas_com_producao or k["viagens"] > 0)
+        and (especialidade == "TODOS" or k["espec"] == especialidade)
+        and (departamento == "TODOS" or (k.get("departamento") or "Não informado") == departamento)
+        and (not busca or busca in normalizar(k.get("nome")) or busca in str(k["mat"]))
+    ]
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Cálculo"
+    cabecalho = ["Matrícula"] + (["Nome"] if exibir_nomes else []) + [
+        "Departamento", "Admissão", "Especialidade", "Dias trabalhados", "Viagens", "Toneladas", "Km méd.",
+        "Salário base (R$)", "Gratificação (R$)", "Teto (R$)", "% Atingido", "Ajuste manual (%)", "Total a receber (R$)",
+    ]
+    ws.append(cabecalho)
+    for k in lista:
+        admissao = k.get("admissao")
+        linha = [k["mat"]] + ([k.get("nome", "")] if exibir_nomes else []) + [
+            k.get("departamento") or "Não informado",
+            admissao.isoformat() if isinstance(admissao, date) else "",
+            _ESPEC_LABEL.get(k["espec"], k["espec"]),
+            k.get("diasTrabalhados", k.get("dias")),
+            k["viagens"],
+            round(k["ton"], 1),
+            round(k.get("kmMed") or 0, 0),
+            round(k["sal"], 2),
+            round(k["gratif"], 2),
+            round(k["teto"], 0),
+            round(k["atingPct"] * 100, 1),
+            round(k["ajustePct"], 1) if k.get("ajustePct") else "",
+            round(k["totalReceber"], 2),
+        ]
+        ws.append(linha)
+
+    for col_cells in ws.columns:
+        largura = max((len(str(c.value)) if c.value is not None else 0) for c in col_cells) + 2
+        ws.column_dimensions[col_cells[0].column_letter].width = min(largura, 40)
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    nome_arquivo = f"calculo_gratificacao_{d['periodo']['inicio']}_a_{d['periodo']['fim']}.xlsx"
+    return send_file(
+        buf, as_attachment=True, download_name=nome_arquivo,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 @app.route("/api/ajuste/<mat>", methods=["PUT"])
