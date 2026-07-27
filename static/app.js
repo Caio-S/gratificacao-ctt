@@ -196,17 +196,6 @@ function exportarCsvSemanal() {
   a.click();
 }
 
-function acumuladosSemana(k, nSem) {
-  const acc = [];
-  let valorAcum = 0, tonAcum = 0;
-  for (let idx = 0; idx < nSem; idx++) {
-    const sem = k.semanas[String(idx)];
-    if (sem) { valorAcum += sem.valor; tonAcum += sem.ton; }
-    acc.push({ valorAcum, tonAcum });
-  }
-  return acc;
-}
-
 function renderSemanal() {
   if (!CALC) return placeholder('Relatório semanal');
   const f = state.filtroSemanal;
@@ -220,7 +209,7 @@ function renderSemanal() {
 
   const linhas = lista.map(k => {
     const projecaoTon = decorridos > 0 && decorridos < diasTotais ? k.ton / baseProjecao * diasTotais : k.ton;
-    const acc = acumuladosSemana(k, CALC.nSem);
+    const metaSemanal = CALC.nSem ? k.teto / CALC.nSem : 0;
     return `
       <tr>
         <td class="mono">${esc(k.mat)}</td>
@@ -228,10 +217,10 @@ function renderSemanal() {
         <td class="tag-sem">${esc(k.departamento || 'Não informado')}</td>
         <td>${badgeEspec(k.espec)}</td>
         ${semanasVisiveis.map(s => {
-          const a = acc[s.idx];
-          if (!a || (a.valorAcum === 0 && a.tonAcum === 0)) return '<td class="num"><span style="color:var(--muted)">—</span></td>';
-          const pct = k.teto ? a.valorAcum / k.teto * 100 : 0;
-          return `<td class="num"><span style="font-weight:600${pct > 100 ? ';color:var(--ambar)' : ''}">${numBR(pct, 1)}%</span><div class="tag-sem">${numBR(a.tonAcum, 0)} t</div></td>`;
+          const sem = k.semanas[String(s.idx)];
+          if (!sem) return '<td class="num"><span style="color:var(--muted)">—</span></td>';
+          const pct = metaSemanal ? sem.valor / metaSemanal * 100 : 0;
+          return `<td class="num"><span style="font-weight:600${pct > 100 ? ';color:var(--ambar)' : ''}">${numBR(pct, 1)}%</span><div class="tag-sem">${numBR(sem.ton, 0)} t</div></td>`;
         }).join('')}
         <td class="num">${numBR(k.ton, 0)}</td>
         <td class="num" style="font-weight:600">${numBR(projecaoTon, 0)}</td>
@@ -243,7 +232,7 @@ function renderSemanal() {
       <div class="linha-form" style="justify-content:space-between">
         <div>
           <h2 style="margin:0">Acompanhamento semanal</h2>
-          <div class="dica" style="margin:4px 0 0">Progresso acumulado de toneladas e % da gratificação atingida a cada semana do período (${brDate(DADOS.periodo.inicio)} a ${brDate(DADOS.periodo.fim)}). A projeção estende o ritmo atual até o fim do período.</div>
+          <div class="dica" style="margin:4px 0 0">Toneladas de cada semana isolada (não acumulado) e % em relação à meta daquela semana (teto do período ÷ número de semanas) (${brDate(DADOS.periodo.inicio)} a ${brDate(DADOS.periodo.fim)}). A projeção estende o ritmo atual até o fim do período.</div>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
           <select id="semSemana">
