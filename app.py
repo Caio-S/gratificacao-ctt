@@ -353,7 +353,8 @@ def exportar_calculo_xlsx():
     ws = wb.active
     ws.title = "Cálculo"
     cabecalho = ["Matrícula"] + (["Nome"] if exibir_nomes else []) + [
-        "Departamento", "Admissão", "Especialidade", "Dias trabalhados", "Viagens", "Toneladas", "Km méd.",
+        "Departamento", "Admissão", "Especialidade", "Dias", "Dias trabalhados", "Dias sem expediente",
+        "Viagens", "Toneladas", "Km méd.",
         "Salário base (R$)", "Gratificação (R$)", "Teto (R$)", "% Atingido", "Ajuste manual (%)", "Total a receber (R$)",
     ]
     ws.append(cabecalho)
@@ -364,6 +365,8 @@ def exportar_calculo_xlsx():
             admissao.isoformat() if isinstance(admissao, date) else "",
             _ESPEC_LABEL.get(k["espec"], k["espec"]),
             k.get("diasTrabalhados", k.get("dias")),
+            k.get("diasTrabalhadosReal", k.get("diasTrabalhados", k.get("dias"))),
+            len(k.get("faltas") or []),
             k["viagens"],
             round(k["ton"], 1),
             round(k.get("kmMed") or 0, 0),

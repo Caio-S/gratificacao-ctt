@@ -594,6 +594,18 @@ function renderExtrato() {
       </div>` : ''}
       <div class="tag-sem" style="margin-top:12px">Documento individual de conferência do colaborador · produção valorizada por pesagem conforme tabela vigente (R$/t × faixa de km) · gratificação proporcional aos dias trabalhados (base ${diasBase}) · valores não incluem horas extras e DSR · fechamento no dia 15.</div>
     </div>
+
+    <div class="cartao cartao-relatorio">
+      <h2>Dias sem expediente no período</h2>
+      <div class="dica">Dias da escala (relatório de jornada) sem horário normal de turno — folgas (D.S.R., compensado), feriados, férias e atestados.${me.diasTrabalhadosReal != null ? ` Dias trabalhados: <b>${me.diasTrabalhadosReal}</b> de ${me.diasTrabalhados} esperados.` : ''}</div>
+      ${(me.faltas || []).length ? `
+      <div class="scroll-x" style="margin-top:6px">
+        <table>
+          <thead><tr><th>Dia</th><th>Motivo</th></tr></thead>
+          <tbody>${me.faltas.map(fa => `<tr><td>${brDate(fa.data)}</td><td>${esc(fa.motivo)}</td></tr>`).join('')}</tbody>
+        </table>
+      </div>` : '<div class="tag-sem">Nenhum dia sem expediente registrado nesse período (ou jornada não importada na aba Dados).</div>'}
+    </div>
     ${modal}
     ${renderRelatorioSelecaoModal()}`;
 }
