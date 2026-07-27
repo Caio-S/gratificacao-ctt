@@ -197,8 +197,11 @@ def import_jornada():
     if not arquivo:
         return jsonify({"error": "Nenhum arquivo enviado."}), 400
     try:
-        matriz = _ler_matriz(arquivo)
-        mapa = parsers.parse_jornada(matriz)
+        wb = openpyxl.load_workbook(arquivo, data_only=True, read_only=True)
+        try:
+            mapa = parsers.parse_jornada(wb.worksheets[0].iter_rows(values_only=True))
+        finally:
+            wb.close()
     except parsers.ErroImportacao as exc:
         return jsonify({"error": str(exc)}), 400
     except Exception as exc:

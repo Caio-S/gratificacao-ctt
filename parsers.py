@@ -167,41 +167,47 @@ def parse_pesagens(matriz):
     return {"regs": resultado, "tem_km": c_km >= 0, "colunas": colunas_nomes}
 
 
-def parse_jornada(matriz):
+def parse_jornada(linhas):
     """Jk: escala/jornada planejada por matricula e dia (relatorio de RH, nao
     e o ponto batido). Guarda, por matricula: TODOS os dias que aparecem na
     planilha ("dias", so a data) e os dias SEM horario normal de turno
     ("faltas", com o motivo - D.S.R., FERIADO, FERIAS, ATESTADO, COMPENSADO
     etc.). "dias" e a base real usada pra calcular dias trabalhados (em vez
     de assumir sempre os dias-base do sistema) - usado pra explicar buracos
-    de producao no calculo."""
-    idx_cabecalho = next(
-        (i for i, linha in enumerate(matriz)
-         if achar_coluna(linha, ["MATRICULA", "MAT"]) >= 0 and achar_coluna(linha, ["DATA"]) >= 0),
-        -1,
-    )
-    if idx_cabecalho < 0:
-        raise ErroImportacao("Cabeçalho não encontrado (precisa de matrícula e data).")
+    de producao no calculo.
 
-    cab = matriz[idx_cabecalho]
-    c_mat = achar_coluna(cab, ["MATRICULA", "MAT"])
-    c_data = achar_coluna(cab, ["DATA"])
-    c_desc = achar_coluna(cab, ["DESCRICAO_JORNADA", "DESCRICAO JORNADA", "JORNADA"])
-    c_entrada1 = achar_coluna(cab, ["HORA_ENTRADA_1", "HORA ENTRADA 1", "ENTRADA_1", "ENTRADA 1"])
-
+    `linhas` e um iteravel (nao precisa ser lista materializada) - esse
+    relatorio costuma vir com 100k+ linhas, entao le direto do worksheet
+    (uma passada so) em vez de duplicar tudo em memoria como os outros
+    parsers fazem via _ler_matriz (senao o import estoura o timeout do
+    servidor)."""
     resultado = {}
-    for i in range(idx_cabecalho + 1, len(matriz)):
-        mat = str(_linha(matriz, i, c_mat) or "").strip()
-        data = parse_data(_linha(matriz, i, c_data)) if c_data >= 0 else None
+    cab = None
+    c_mat = c_data = c_desc = c_entrada1 = -1
+    for row in linhas:
+        linha = [("" if v is None else v) for v in row]
+        if cab is None:
+            if achar_coluna(linha, ["MATRICULA", "MAT"]) >= 0 and achar_coluna(linha, ["DATA"]) >= 0:
+                cab = linha
+                c_mat = achar_coluna(cab, ["MATRICULA", "MAT"])
+                c_data = achar_coluna(cab, ["DATA"])
+                c_desc = achar_coluna(cab, ["DESCRICAO_JORNADA", "DESCRICAO JORNADA", "JORNADA"])
+                c_entrada1 = achar_coluna(cab, ["HORA_ENTRADA_1", "HORA ENTRADA 1", "ENTRADA_1", "ENTRADA 1"])
+            continue
+        mat = str(linha[c_mat] if 0 <= c_mat < len(linha) else "").strip()
+        data = parse_data(linha[c_data]) if 0 <= c_data < len(linha) else None
         if not valor_valido(mat) or not data:
             continue
         entrada = resultado.setdefault(mat, {"dias": [], "faltas": []})
         data_iso = data.isoformat()
         entrada["dias"].append(data_iso)
-        tem_horario = c_entrada1 >= 0 and valor_valido(_linha(matriz, i, c_entrada1))
+        tem_horario = 0 <= c_entrada1 < len(linha) and valor_valido(linha[c_entrada1])
         if not tem_horario:
-            motivo = str(_linha(matriz, i, c_desc) or "").strip() if c_desc >= 0 else ""
+            motivo = str(linha[c_desc]).strip() if 0 <= c_desc < len(linha) else ""
             entrada["faltas"].append({"data": data_iso, "motivo": motivo or "Sem expediente"})
+
+    if cab is None:
+        raise ErroImportacao("Cabeçalho não encontrado (precisa de matrícula e data).")
     for entrada in resultado.values():
         entrada["dias"].sort()
         entrada["faltas"].sort(key=lambda r: r["data"])
