@@ -1563,11 +1563,11 @@ function wireDados() {
     finally { setBtnLoading(btn, false); }
   };
 
-  const upload = (inputId, endpoint, labelOk) => {
+  const upload = (inputId, zonaId, endpoint, labelOk) => {
     const el = $(inputId);
     if (!el) return;
-    el.onchange = async e => {
-      const arquivo = e.target.files[0]; if (!arquivo) return;
+    const processar = async arquivo => {
+      if (!arquivo) return;
       const fd = new FormData(); fd.append('arquivo', arquivo);
       try {
         const r = await api(endpoint, { method: 'POST', body: fd });
@@ -1575,15 +1575,29 @@ function wireDados() {
         render();
         showToast('ok', labelOk(r));
       } catch (err) { showToast('erro', err.message); }
+    };
+    el.onchange = async e => {
+      await processar(e.target.files[0]);
       e.target.value = '';
     };
+    const zona = $(zonaId);
+    if (!zona) return;
+    ['dragenter', 'dragover'].forEach(evt => zona.addEventListener(evt, e => {
+      e.preventDefault(); e.stopPropagation();
+      zona.classList.add('arrastando');
+    }));
+    ['dragleave', 'dragend', 'drop'].forEach(evt => zona.addEventListener(evt, e => {
+      e.preventDefault(); e.stopPropagation();
+      zona.classList.remove('arrastando');
+    }));
+    zona.addEventListener('drop', e => processar(e.dataTransfer.files[0]));
   };
-  upload('#f_funcionarios', '/import/funcionarios', r => `${r.total} funcionários importados de "${r.nomeArquivo}".`);
-  upload('#f_frotas', '/import/frotas', r => `Disponibilidade importada: ${r.total} frotas.`);
-  upload('#f_pesagens', '/import/pesagens', r => r.temKm
+  upload('#f_funcionarios', '#zonaFuncionarios', '/import/funcionarios', r => `${r.total} funcionários importados de "${r.nomeArquivo}".`);
+  upload('#f_frotas', '#zonaFrotas', '/import/frotas', r => `Disponibilidade importada: ${r.total} frotas.`);
+  upload('#f_pesagens', '#zonaPesagens', '/import/pesagens', r => r.temKm
     ? `${r.total} pesagens importadas de "${r.nomeArquivo}".`
     : `${r.total} pesagens importadas, mas a coluna de km/raio não foi encontrada — km vai ficar zerado.`);
-  upload('#f_jornada', '/import/jornada', r => `${r.totalRegistros} dias sem expediente em ${r.totalMatriculas} matrículas, de "${r.nomeArquivo}".`);
+  upload('#f_jornada', '#zonaJornada', '/import/jornada', r => `${r.totalRegistros} dias sem expediente em ${r.totalMatriculas} matrículas, de "${r.nomeArquivo}".`);
 
   const btnDemo = $('#btnDemo');
   if (btnDemo) btnDemo.onclick = async () => {
