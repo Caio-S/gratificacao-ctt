@@ -1092,27 +1092,9 @@ function renderCalculo() {
   }, { n: 0, ton: 0, viagens: 0, gratif: 0, sal: 0, totalReceber: 0 });
   const diasBase = DADOS.diasBase;
   const especCaminhao = (PARAMS.especialidades || []).find(e => e.chave === 'CAMINHAO') || {};
-  const grupos = [
-    { ch: ['CAMINHAO', 'BATE-VOLTA'], tit: 'Motoristas — Caminhão canavieiro',
-      crit: `cada viagem vale peso (t) × R$/t da faixa de km da viagem · teto R$ ${numBR(especCaminhao.valorProd || 0, 0)} · prorata ${diasBase} dias-base` },
-    { ch: ['COLHEDORA'], tit: 'Operadores — Colhedora',
-      crit: `meta ${numBR(PARAMS.tetoColhedora.metaDia, 0)} t/dia × ${diasBase} dias-base = ${numBR(PARAMS.tetoColhedora.metaDia * diasBase, 0)} t · gratificação = % da meta × R$ ${numBR(PARAMS.tetoColhedora.valor, 0)}` },
-    { ch: ['TRANSBORDO'], tit: 'Operadores — Transbordo',
-      crit: `meta ${numBR(PARAMS.tetoTransbordo.metaDia, 0)} t/dia × ${diasBase} dias-base = ${numBR(PARAMS.tetoTransbordo.metaDia * diasBase, 0)} t · gratificação = % da meta × R$ ${numBR(PARAMS.tetoTransbordo.valor, 0)}` },
-  ];
-  const secoes = grupos.map(g => {
-    const itens = filtrado.filter(k => g.ch.includes(k.espec));
-    if (!itens.length) return '';
-    const tot = itens.reduce((a, k) => (a.n++, a.ton += k.ton, a.g += k.gratif, a), { n: 0, ton: 0, g: 0 });
-    return `
-      <div class="cartao">
-        <div class="sec-head">
-          <div><h2 style="margin:0">${esc(g.tit)}</h2><div class="dica" style="margin:2px 0 0">Critério: ${esc(g.crit)}</div></div>
-          <div class="sec-tot mono">${tot.n} colab. · ${numBR(tot.ton, 0)} t · R$ ${numBR(tot.g, 0)}</div>
-        </div>
-        ${tabelaCalculo(itens)}
-      </div>`;
-  }).filter(Boolean).join('');
+  const criterio = `Caminhão/Bate-volta: peso (t) × R$/t da faixa de km da viagem · teto R$ ${numBR(especCaminhao.valorProd || 0, 0)} · prorata ${diasBase} dias-base. `
+    + `Colhedora: meta ${numBR(PARAMS.tetoColhedora.metaDia, 0)} t/dia × ${diasBase} dias-base = ${numBR(PARAMS.tetoColhedora.metaDia * diasBase, 0)} t · gratificação = % da meta × R$ ${numBR(PARAMS.tetoColhedora.valor, 0)}. `
+    + `Transbordo: meta ${numBR(PARAMS.tetoTransbordo.metaDia, 0)} t/dia × ${diasBase} dias-base = ${numBR(PARAMS.tetoTransbordo.metaDia * diasBase, 0)} t · gratificação = % da meta × R$ ${numBR(PARAMS.tetoTransbordo.valor, 0)}.`;
 
   return `
     <div class="kpis">
@@ -1145,8 +1127,9 @@ function renderCalculo() {
           <button class="btn no-print" id="btnExportarCalculoPdf">Exportar PDF</button>
         </div>
       </div>
+      <div class="dica" style="margin-top:6px">${esc(criterio)}</div>
+      ${filtrado.length ? tabelaCalculo(filtrado) : '<div style="text-align:center;padding:24px;color:var(--muted)">Sem dados — importe as bases ou carregue a demonstração na aba Dados.</div>'}
     </div>
-    ${secoes || '<div class="cartao"><div style="text-align:center;padding:24px;color:var(--muted)">Sem dados — importe as bases ou carregue a demonstração na aba Dados.</div></div>'}
     ${renderAjusteModal()}
     ${renderFaltasModal()}`;
 }
