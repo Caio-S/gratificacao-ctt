@@ -99,7 +99,10 @@ def get_dados_bundle():
         "frotas": valores["frotas"],
         "periodo": valores["periodo"],
         "dias_base": valores["dias_base"],
-        "jornada_resumo": {"matriculas": len(jornada), "registros": sum(len(v) for v in jornada.values())},
+        "jornada_resumo": {
+            "matriculas": len(jornada),
+            "registros": sum(len(v.get("faltas", [])) for v in jornada.values()),
+        },
     }
 
 

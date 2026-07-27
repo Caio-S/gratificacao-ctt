@@ -204,7 +204,7 @@ def import_jornada():
     except Exception as exc:
         return jsonify({"error": f"Falha ao importar jornada: {exc}"}), 400
     data_store.set_jornada(mapa)
-    total_registros = sum(len(v) for v in mapa.values())
+    total_registros = sum(len(v.get("faltas", [])) for v in mapa.values())
     return jsonify({"ok": True, "totalMatriculas": len(mapa), "totalRegistros": total_registros, "nomeArquivo": arquivo.filename})
 
 

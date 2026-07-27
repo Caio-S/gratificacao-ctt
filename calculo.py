@@ -232,14 +232,26 @@ def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, par
         k["totalReceber"] = k["sal"] + gratif
         k["kmMed"] = k["kmSoma"] / k["viagens"] if k["viagens"] else 0
         k["diasTrabalhados"] = _dias_trabalhados_periodo(k.get("admissao"), periodo_inicio, periodo_fim, dias_base)
+        entrada_jornada = jornada.get(k["mat"]) or {}
+        todos_dias_jornada = entrada_jornada.get("dias") or []
         k["faltas"] = [
-            r for r in jornada.get(k["mat"], [])
+            r for r in (entrada_jornada.get("faltas") or [])
             if periodo_inicio_iso is None or (periodo_inicio_iso <= r["data"] <= periodo_fim_iso)
         ]
-        # dias trabalhados de verdade: dias esperados (admissao/dias-base) menos
-        # os dias sem expediente da escala (D.S.R., feriado, ferias, atestado...)
-        # do relatorio de jornada - so exibicao, nao entra na formula da gratificacao.
-        k["diasTrabalhadosReal"] = max(0, k["diasTrabalhados"] - len(k["faltas"]))
+        # dias trabalhados de verdade: conta os dias que de fato aparecem na
+        # planilha de jornada dentro do periodo (nao um "dias-base" fixo) menos
+        # os dias sem expediente (D.S.R., feriado, ferias, atestado...). So
+        # exibicao, nao entra na formula da gratificacao. Sem jornada
+        # importada pra essa matricula, cai de volta pro dias esperados
+        # (admissao/dias-base) menos as faltas, igual antes.
+        if todos_dias_jornada:
+            dias_planilha_periodo = sum(
+                1 for d in todos_dias_jornada
+                if periodo_inicio_iso is None or (periodo_inicio_iso <= d <= periodo_fim_iso)
+            )
+            k["diasTrabalhadosReal"] = max(0, dias_planilha_periodo - len(k["faltas"]))
+        else:
+            k["diasTrabalhadosReal"] = max(0, k["diasTrabalhados"] - len(k["faltas"]))
         resultado.append(k)
 
     lista = [k for k in resultado if k["espec"] in ("CAMINHAO", "BATE-VOLTA", "COLHEDORA", "TRANSBORDO")]

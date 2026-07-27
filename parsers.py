@@ -169,10 +169,12 @@ def parse_pesagens(matriz):
 
 def parse_jornada(matriz):
     """Jk: escala/jornada planejada por matricula e dia (relatorio de RH, nao
-    e o ponto batido). Guarda so os dias SEM horario normal de turno (entrada
-    1 vazia) com o motivo (D.S.R., FERIADO, FERIAS, ATESTADO, COMPENSADO
-    etc.) - usado pra explicar buracos de producao no calculo. Agrupado por
-    matricula pra facilitar a consulta no front."""
+    e o ponto batido). Guarda, por matricula: TODOS os dias que aparecem na
+    planilha ("dias", so a data) e os dias SEM horario normal de turno
+    ("faltas", com o motivo - D.S.R., FERIADO, FERIAS, ATESTADO, COMPENSADO
+    etc.). "dias" e a base real usada pra calcular dias trabalhados (em vez
+    de assumir sempre os dias-base do sistema) - usado pra explicar buracos
+    de producao no calculo."""
     idx_cabecalho = next(
         (i for i, linha in enumerate(matriz)
          if achar_coluna(linha, ["MATRICULA", "MAT"]) >= 0 and achar_coluna(linha, ["DATA"]) >= 0),
@@ -193,13 +195,16 @@ def parse_jornada(matriz):
         data = parse_data(_linha(matriz, i, c_data)) if c_data >= 0 else None
         if not valor_valido(mat) or not data:
             continue
+        entrada = resultado.setdefault(mat, {"dias": [], "faltas": []})
+        data_iso = data.isoformat()
+        entrada["dias"].append(data_iso)
         tem_horario = c_entrada1 >= 0 and valor_valido(_linha(matriz, i, c_entrada1))
-        if tem_horario:
-            continue
-        motivo = str(_linha(matriz, i, c_desc) or "").strip() if c_desc >= 0 else ""
-        resultado.setdefault(mat, []).append({"data": data.isoformat(), "motivo": motivo or "Sem expediente"})
-    for lista in resultado.values():
-        lista.sort(key=lambda r: r["data"])
+        if not tem_horario:
+            motivo = str(_linha(matriz, i, c_desc) or "").strip() if c_desc >= 0 else ""
+            entrada["faltas"].append({"data": data_iso, "motivo": motivo or "Sem expediente"})
+    for entrada in resultado.values():
+        entrada["dias"].sort()
+        entrada["faltas"].sort(key=lambda r: r["data"])
     return resultado
 
 
