@@ -459,6 +459,46 @@ def rejeitar_ajuste_pendente(ajuste_id):
     return "", 204
 
 
+@app.route("/api/gratificacoes/aprovacoes", methods=["GET"])
+@requer_papel("gerente", "diretoria")
+def listar_aprovacoes_gratificacao():
+    periodo = data_store.get_periodo()
+    aprovacoes = data_store.listar_aprovacoes_gratificacao(periodo["inicio"], periodo["fim"])
+    resultado = {}
+    for mat, row in aprovacoes.items():
+        resultado[mat] = {
+            "aprovadoGerente": row["aprovado_gerente"],
+            "aprovadoGerentePor": row["aprovado_gerente_por"],
+            "aprovadoDiretoria": row["aprovado_diretoria"],
+            "aprovadoDiretoriaPor": row["aprovado_diretoria_por"],
+        }
+    return jsonify(resultado)
+
+
+@app.route("/api/gratificacoes/aprovar", methods=["POST"])
+@requer_papel("gerente", "diretoria")
+def aprovar_gratificacoes_rota():
+    payload = request.get_json(force=True)
+    mats = payload.get("mats") or []
+    if not mats:
+        return jsonify({"error": "Selecione ao menos um colaborador."}), 400
+    periodo = data_store.get_periodo()
+    data_store.aprovar_gratificacoes(mats, session["papel"], session["username"], periodo["inicio"], periodo["fim"])
+    return jsonify({"ok": True})
+
+
+@app.route("/api/gratificacoes/desfazer", methods=["POST"])
+@requer_papel("gerente", "diretoria")
+def desfazer_aprovacao_gratificacao_rota():
+    payload = request.get_json(force=True)
+    mats = payload.get("mats") or []
+    if not mats:
+        return jsonify({"error": "Selecione ao menos um colaborador."}), 400
+    periodo = data_store.get_periodo()
+    data_store.desfazer_aprovacao_gratificacao(mats, session["papel"], periodo["inicio"], periodo["fim"])
+    return jsonify({"ok": True})
+
+
 def _usuario_json(u):
     d = dict(u)
     if isinstance(d.get("criado_em"), datetime):

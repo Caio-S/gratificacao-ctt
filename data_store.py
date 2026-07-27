@@ -331,6 +331,48 @@ def rejeitar_ajuste(ajuste_id, usuario, motivo):
     )
 
 
+# ---------- aprovacao de gratificacao (checklist de revisao por periodo) ----------
+# Diferente de ctt_ajustes_pendentes (que é uma PROPOSTA de mudança de %), isto
+# aqui é só um sinal de "Gerente/Diretoria revisou e confere com esse valor" -
+# não trava nem recalcula nada, e cada papel pode desfazer o proprio voto a
+# qualquer momento. Escopado por periodo (inicio/fim), entao um periodo novo
+# comeca sempre com nada aprovado.
+
+def listar_aprovacoes_gratificacao(periodo_inicio, periodo_fim):
+    linhas = _executar(
+        "SELECT * FROM ctt_gratificacao_aprovacoes WHERE periodo_inicio = %s AND periodo_fim = %s",
+        (periodo_inicio, periodo_fim),
+        fetch="all",
+    )
+    return {r["mat"]: r for r in linhas}
+
+
+def aprovar_gratificacoes(mats, papel, usuario, periodo_inicio, periodo_fim):
+    coluna_flag = "aprovado_gerente" if papel == "gerente" else "aprovado_diretoria"
+    coluna_por = "aprovado_gerente_por" if papel == "gerente" else "aprovado_diretoria_por"
+    coluna_em = "aprovado_gerente_em" if papel == "gerente" else "aprovado_diretoria_em"
+    for mat in mats:
+        _executar(
+            f"""INSERT INTO ctt_gratificacao_aprovacoes (mat, periodo_inicio, periodo_fim, {coluna_flag}, {coluna_por}, {coluna_em})
+                VALUES (%s, %s, %s, true, %s, now())
+                ON CONFLICT (mat, periodo_inicio, periodo_fim)
+                DO UPDATE SET {coluna_flag} = true, {coluna_por} = %s, {coluna_em} = now()""",
+            (mat, periodo_inicio, periodo_fim, usuario, usuario),
+        )
+
+
+def desfazer_aprovacao_gratificacao(mats, papel, periodo_inicio, periodo_fim):
+    coluna_flag = "aprovado_gerente" if papel == "gerente" else "aprovado_diretoria"
+    coluna_por = "aprovado_gerente_por" if papel == "gerente" else "aprovado_diretoria_por"
+    coluna_em = "aprovado_gerente_em" if papel == "gerente" else "aprovado_diretoria_em"
+    for mat in mats:
+        _executar(
+            f"""UPDATE ctt_gratificacao_aprovacoes SET {coluna_flag} = false, {coluna_por} = NULL, {coluna_em} = NULL
+                WHERE mat = %s AND periodo_inicio = %s AND periodo_fim = %s""",
+            (mat, periodo_inicio, periodo_fim),
+        )
+
+
 def limpar_tudo():
     _set("funcionarios", [])
     _set("pesagens", [])
