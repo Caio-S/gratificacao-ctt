@@ -1597,7 +1597,45 @@ function wireDados() {
   upload('#f_pesagens', '#zonaPesagens', '/import/pesagens', r => r.temKm
     ? `${r.total} pesagens importadas de "${r.nomeArquivo}".`
     : `${r.total} pesagens importadas, mas a coluna de km/raio não foi encontrada — km vai ficar zerado.`);
-  upload('#f_jornada', '#zonaJornada', '/import/jornada', r => `${r.totalRegistros} dias sem expediente em ${r.totalMatriculas} matrículas, de "${r.nomeArquivo}".`);
+
+  const uploadAssincrono = (inputId, zonaId, endpoint, statusEndpoint, labelOk) => {
+    const el = $(inputId);
+    if (!el) return;
+    const consultar = async () => {
+      let st;
+      try { st = await api(statusEndpoint); } catch (err) { showToast('erro', err.message); return; }
+      if (st.status === 'processando') { setTimeout(consultar, 3000); return; }
+      if (st.status === 'erro') { showToast('erro', st.mensagem); return; }
+      await carregarDados();
+      render();
+      showToast('ok', labelOk(st));
+    };
+    const processar = async arquivo => {
+      if (!arquivo) return;
+      const fd = new FormData(); fd.append('arquivo', arquivo);
+      try {
+        await api(endpoint, { method: 'POST', body: fd });
+        showToast('ok', 'Arquivo recebido — processando em segundo plano (pode levar 1-2 minutos para um arquivo grande)…');
+        setTimeout(consultar, 3000);
+      } catch (err) { showToast('erro', err.message); }
+    };
+    el.onchange = async e => {
+      await processar(e.target.files[0]);
+      e.target.value = '';
+    };
+    const zona = $(zonaId);
+    if (!zona) return;
+    ['dragenter', 'dragover'].forEach(evt => zona.addEventListener(evt, e => {
+      e.preventDefault(); e.stopPropagation();
+      zona.classList.add('arrastando');
+    }));
+    ['dragleave', 'dragend', 'drop'].forEach(evt => zona.addEventListener(evt, e => {
+      e.preventDefault(); e.stopPropagation();
+      zona.classList.remove('arrastando');
+    }));
+    zona.addEventListener('drop', e => processar(e.dataTransfer.files[0]));
+  };
+  uploadAssincrono('#f_jornada', '#zonaJornada', '/import/jornada', '/import/jornada/status', r => `${r.totalRegistros} dias sem expediente em ${r.totalMatriculas} matrículas, de "${r.nomeArquivo}".`);
 
   const btnDemo = $('#btnDemo');
   if (btnDemo) btnDemo.onclick = async () => {

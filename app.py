@@ -1,4 +1,5 @@
 import os
+import threading
 from datetime import date, datetime
 from decimal import Decimal
 from functools import wraps
@@ -190,25 +191,45 @@ def import_pesagens():
     })
 
 
+def _processar_jornada_async(conteudo, nome_arquivo):
+    """Roda em thread separada - o relatorio de jornada tem 100k+ linhas e
+    processar tudo dentro da própria requisição HTTP estoura o timeout fixo
+    do proxy do Render (~30s), mesmo com o parser otimizado. Por isso a rota
+    devolve na hora e isso aqui atualiza o status que o front fica consultando."""
+    try:
+        wb = openpyxl.load_workbook(BytesIO(conteudo), data_only=True, read_only=True)
+        try:
+            mapa = parsers.parse_jornada(wb.worksheets[0].iter_rows(values_only=True))
+        finally:
+            wb.close()
+        data_store.set_jornada(mapa)
+        total_registros = sum(len(v.get("faltas", [])) for v in mapa.values())
+        data_store.set_jornada_import_status({
+            "status": "concluido", "totalMatriculas": len(mapa), "totalRegistros": total_registros,
+            "nomeArquivo": nome_arquivo,
+        })
+    except parsers.ErroImportacao as exc:
+        data_store.set_jornada_import_status({"status": "erro", "mensagem": str(exc)})
+    except Exception as exc:
+        data_store.set_jornada_import_status({"status": "erro", "mensagem": f"Falha ao importar jornada: {exc}"})
+
+
 @app.route("/api/import/jornada", methods=["POST"])
 @requer_papel("coordenador", "gerente", "diretoria")
 def import_jornada():
     arquivo = request.files.get("arquivo")
     if not arquivo:
         return jsonify({"error": "Nenhum arquivo enviado."}), 400
-    try:
-        wb = openpyxl.load_workbook(arquivo, data_only=True, read_only=True)
-        try:
-            mapa = parsers.parse_jornada(wb.worksheets[0].iter_rows(values_only=True))
-        finally:
-            wb.close()
-    except parsers.ErroImportacao as exc:
-        return jsonify({"error": str(exc)}), 400
-    except Exception as exc:
-        return jsonify({"error": f"Falha ao importar jornada: {exc}"}), 400
-    data_store.set_jornada(mapa)
-    total_registros = sum(len(v.get("faltas", [])) for v in mapa.values())
-    return jsonify({"ok": True, "totalMatriculas": len(mapa), "totalRegistros": total_registros, "nomeArquivo": arquivo.filename})
+    conteudo = arquivo.read()
+    data_store.set_jornada_import_status({"status": "processando"})
+    threading.Thread(target=_processar_jornada_async, args=(conteudo, arquivo.filename), daemon=True).start()
+    return jsonify({"status": "processando"}), 202
+
+
+@app.route("/api/import/jornada/status", methods=["GET"])
+@requer_login
+def status_import_jornada():
+    return jsonify(data_store.get_jornada_import_status())
 
 
 @app.route("/api/seed", methods=["POST"])

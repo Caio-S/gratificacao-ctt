@@ -173,6 +173,14 @@ def set_jornada(mapa):
     _set("jornada", mapa)
 
 
+def get_jornada_import_status():
+    return _get("jornada_import_status", {"status": "ocioso"})
+
+
+def set_jornada_import_status(status):
+    _set("jornada_import_status", status)
+
+
 def get_parametros():
     params = _get("parametros", None)
     if params is None:
