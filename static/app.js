@@ -944,7 +944,8 @@ function linhaCalculo(k) {
       <td class="tag-sem">${esc(k.departamento || 'Não informado')}</td>
       <td class="num tag-sem">${admissao}</td>
       <td>${badgeEspec(k.espec)}</td>
-      <td class="num">${k.diasTrabalhados}${(k.faltas && k.faltas.length)
+      <td class="num">${k.diasTrabalhados}</td>
+      <td class="num">${k.diasTrabalhadosReal}${(k.faltas && k.faltas.length)
         ? ` <button type="button" class="btn peq sec" data-faltas="${esc(k.mat)}" title="Ver dias sem expediente (folgas, atestados, feriados...)">🗓️ ${k.faltas.length}</button>`
         : ''}</td>
       <td class="num">${k.viagens}</td>
@@ -986,7 +987,7 @@ function linhaCalculo(k) {
       }).join('')
     : '<span class="tag-sem">Sem frota registrada nas pesagens.</span>';
   return linhaPrincipal + `
-    <tr class="linha-frotas"><td colspan="16"><div class="frotas-box">${corpoDetalhe}</div></td></tr>`;
+    <tr class="linha-frotas"><td colspan="17"><div class="frotas-box">${corpoDetalhe}</div></td></tr>`;
 }
 
 function tabelaCalculo(lista) {
@@ -998,7 +999,7 @@ function tabelaCalculo(lista) {
       <table>
         <thead><tr>
           <th>Mat.</th><th>Colaborador</th><th>Departamento</th><th>Admissão</th><th>Espec.</th>
-          <th class="num">Dias</th><th class="num">Viagens</th><th class="num">Ton</th><th class="num">Km méd.</th>
+          <th class="num">Dias</th><th class="num">Dias trabalhados</th><th class="num">Viagens</th><th class="num">Ton</th><th class="num">Km méd.</th>
           <th>Frotas / disponib.</th><th class="num">Salário base</th><th class="num">Gratificação (R$)</th>
           <th class="num">Teto (R$)</th><th>% Atingido</th><th class="num">Total (R$)</th><th class="col-acoes">Ações</th>
         </tr></thead>

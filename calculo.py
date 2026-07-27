@@ -236,6 +236,10 @@ def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, par
             r for r in jornada.get(k["mat"], [])
             if periodo_inicio_iso is None or (periodo_inicio_iso <= r["data"] <= periodo_fim_iso)
         ]
+        # dias trabalhados de verdade: dias esperados (admissao/dias-base) menos
+        # os dias sem expediente da escala (D.S.R., feriado, ferias, atestado...)
+        # do relatorio de jornada - so exibicao, nao entra na formula da gratificacao.
+        k["diasTrabalhadosReal"] = max(0, k["diasTrabalhados"] - len(k["faltas"]))
         resultado.append(k)
 
     lista = [k for k in resultado if k["espec"] in ("CAMINHAO", "BATE-VOLTA", "COLHEDORA", "TRANSBORDO")]
