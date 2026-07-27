@@ -16,6 +16,7 @@ const state = {
   extratoSemanaAberta: null,
   ajusteModalMat: null,
   rejeitarId: null,
+  ajusteLoteMats: null,
   /* cada aba com filtro proprio tem seu objeto isolado — nao ha estado de
      filtro global compartilhado entre abas (evita o painel da diretoria, ou
      qualquer outra aba, herdar o filtro aplicado em outra) */
@@ -1177,6 +1178,7 @@ function renderGratificacoesTabela() {
   const lista = gratificacoesFiltradas();
   const linhasGratif = lista.map(k => `
     <tr>
+      <td><input type="checkbox" class="chkGratif" value="${esc(k.mat)}"></td>
       <td class="mono">${esc(k.mat)}</td>
       <td>${state.exibirNomes ? esc(k.nome) : `Colaborador ${esc(k.mat)}`}</td>
       <td class="tag-sem">${esc(k.departamento || 'Não informado')}</td>
@@ -1192,9 +1194,9 @@ function renderGratificacoesTabela() {
       <div class="linha-form" style="justify-content:space-between">
         <div>
           <h2 style="margin:0">Gratificações por colaborador</h2>
-          <div class="dica" style="margin:4px 0 0">Todos os colaboradores do período. Use os filtros pra achar rápido quem tem ajuste manual aplicado (gratificação a mais além da produção).</div>
+          <div class="dica" style="margin:4px 0 0">Todos os colaboradores do período. Use os filtros pra achar rápido quem tem ajuste manual aplicado (gratificação a mais além da produção). Marque um ou vários e aplique o mesmo ajuste em lote.</div>
         </div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
           <input id="aprovBusca" placeholder="Buscar nome ou matrícula…" value="${esc(f.busca)}" style="width:200px">
           <select id="aprovEspec">
             <option value="TODOS" ${f.especialidade === 'TODOS' ? 'selected' : ''}>Todas especialidades</option>
@@ -1210,16 +1212,47 @@ function renderGratificacoesTabela() {
           <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;white-space:nowrap">
             <input type="checkbox" id="aprovSoAjuste" ${f.soComAjuste ? 'checked' : ''}> Só com ajuste manual
           </label>
+          <button class="btn" id="btnAjusteLote">Aplicar ajuste aos selecionados</button>
         </div>
       </div>
       <div class="scroll-x">
         <table>
           <thead><tr>
+            <th><input type="checkbox" id="chkTodosGratif"></th>
             <th>Mat.</th><th>Colaborador</th><th>Departamento</th><th>Espec.</th>
             <th class="num">Gratificação (R$)</th><th class="num">Ajuste manual</th><th class="num">% Atingido</th><th class="num">Total (R$)</th>
           </tr></thead>
-          <tbody>${linhasGratif || '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--muted)">Nenhum colaborador encontrado com esses filtros.</td></tr>'}</tbody>
+          <tbody>${linhasGratif || '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--muted)">Nenhum colaborador encontrado com esses filtros.</td></tr>'}</tbody>
         </table>
+      </div>
+    </div>
+    ${renderAjusteLoteModal()}`;
+}
+
+function renderAjusteLoteModal() {
+  const mats = state.ajusteLoteMats;
+  if (!mats || !mats.length) return '';
+  const plural = mats.length > 1 ? 'es' : '';
+  return `
+    <div class="modal-ov no-print" id="ajusteLoteModalOv">
+      <div class="modal-box" id="ajusteLoteModalBox">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <h3>Ajuste manual em lote — ${mats.length} colaborador${plural}</h3>
+          <button class="modal-fecha" id="ajusteLoteModalFechar">×</button>
+        </div>
+        <div class="dica">Aplica o mesmo percentual e observação para todos os selecionados. O total nunca ultrapassa 100% do teto de cada um. Fica registrado para auditoria e aparece no extrato de cada colaborador.</div>
+        <div class="campo" style="margin-top:10px;max-width:160px">
+          <label>Percentual a somar (%)</label>
+          <input type="number" step="0.1" id="ajusteLotePctInput" placeholder="ex: 5">
+        </div>
+        <div class="campo" style="margin-top:10px">
+          <label>Observação (obrigatória)</label>
+          <textarea id="ajusteLoteObsInput" rows="3" style="width:100%;font-family:'Inter';font-size:13px;padding:8px;border:1px solid var(--linha);border-radius:5px;box-sizing:border-box"></textarea>
+        </div>
+        <div class="linha-form" style="margin-top:14px;justify-content:flex-end">
+          <button class="btn sec" id="ajusteLoteCancelar">Cancelar</button>
+          <button class="btn" id="ajusteLoteConfirmar">Aplicar a ${mats.length} colaborador${plural}</button>
+        </div>
       </div>
     </div>`;
 }
@@ -1273,6 +1306,45 @@ function wireAprovacoes() {
         await carregarAjustesPendentes();
         render();
         showToast('ok', 'Sugestão rejeitada.');
+      } catch (e) { showToast('erro', e.message); }
+      finally { setBtnLoading(btn, false); }
+    };
+  }
+
+  const chkTodosGratif = $('#chkTodosGratif');
+  if (chkTodosGratif) chkTodosGratif.onchange = e => {
+    document.querySelectorAll('.chkGratif').forEach(c => { c.checked = e.target.checked; });
+  };
+  const btnAjusteLote = $('#btnAjusteLote');
+  if (btnAjusteLote) btnAjusteLote.onclick = () => {
+    const mats = [...document.querySelectorAll('.chkGratif:checked')].map(c => c.value);
+    if (!mats.length) { showToast('erro', 'Selecione ao menos um colaborador.'); return; }
+    state.ajusteLoteMats = mats;
+    render();
+  };
+  const ovLote = $('#ajusteLoteModalOv');
+  if (ovLote) {
+    const fecharLote = () => { state.ajusteLoteMats = null; render(); };
+    ovLote.onclick = fecharLote;
+    $('#ajusteLoteModalBox').onclick = e => e.stopPropagation();
+    $('#ajusteLoteModalFechar').onclick = fecharLote;
+    $('#ajusteLoteCancelar').onclick = fecharLote;
+    $('#ajusteLoteConfirmar').onclick = async () => {
+      const pct = parseFloat($('#ajusteLotePctInput').value);
+      const obs = $('#ajusteLoteObsInput').value.trim();
+      if (Number.isNaN(pct)) { showToast('erro', 'Informe o percentual.'); return; }
+      if (!obs) { showToast('erro', 'Informe a observação justificando o ajuste.'); return; }
+      const btn = $('#ajusteLoteConfirmar');
+      setBtnLoading(btn, true);
+      try {
+        for (const mat of state.ajusteLoteMats) {
+          await api(`/ajuste/${encodeURIComponent(mat)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pct, obs }) });
+        }
+        const total = state.ajusteLoteMats.length;
+        state.ajusteLoteMats = null;
+        await carregarCalculo();
+        render();
+        showToast('ok', `Ajuste aplicado a ${total} colaborador${total > 1 ? 'es' : ''}.`);
       } catch (e) { showToast('erro', e.message); }
       finally { setBtnLoading(btn, false); }
     };
