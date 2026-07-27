@@ -167,6 +167,42 @@ def parse_pesagens(matriz):
     return {"regs": resultado, "tem_km": c_km >= 0, "colunas": colunas_nomes}
 
 
+def parse_jornada(matriz):
+    """Jk: escala/jornada planejada por matricula e dia (relatorio de RH, nao
+    e o ponto batido). Guarda so os dias SEM horario normal de turno (entrada
+    1 vazia) com o motivo (D.S.R., FERIADO, FERIAS, ATESTADO, COMPENSADO
+    etc.) - usado pra explicar buracos de producao no calculo. Agrupado por
+    matricula pra facilitar a consulta no front."""
+    idx_cabecalho = next(
+        (i for i, linha in enumerate(matriz)
+         if achar_coluna(linha, ["MATRICULA", "MAT"]) >= 0 and achar_coluna(linha, ["DATA"]) >= 0),
+        -1,
+    )
+    if idx_cabecalho < 0:
+        raise ErroImportacao("Cabeçalho não encontrado (precisa de matrícula e data).")
+
+    cab = matriz[idx_cabecalho]
+    c_mat = achar_coluna(cab, ["MATRICULA", "MAT"])
+    c_data = achar_coluna(cab, ["DATA"])
+    c_desc = achar_coluna(cab, ["DESCRICAO_JORNADA", "DESCRICAO JORNADA", "JORNADA"])
+    c_entrada1 = achar_coluna(cab, ["HORA_ENTRADA_1", "HORA ENTRADA 1", "ENTRADA_1", "ENTRADA 1"])
+
+    resultado = {}
+    for i in range(idx_cabecalho + 1, len(matriz)):
+        mat = str(_linha(matriz, i, c_mat) or "").strip()
+        data = parse_data(_linha(matriz, i, c_data)) if c_data >= 0 else None
+        if not valor_valido(mat) or not data:
+            continue
+        tem_horario = c_entrada1 >= 0 and valor_valido(_linha(matriz, i, c_entrada1))
+        if tem_horario:
+            continue
+        motivo = str(_linha(matriz, i, c_desc) or "").strip() if c_desc >= 0 else ""
+        resultado.setdefault(mat, []).append({"data": data.isoformat(), "motivo": motivo or "Sem expediente"})
+    for lista in resultado.values():
+        lista.sort(key=lambda r: r["data"])
+    return resultado
+
+
 _FUNCIONARIOS_DEMO = [
     {"mat": "20801", "nome": "JOSE WILSON DOS SANTOS", "funcao": "MOTORISTA III", "espec": "CAMINHAO", "dias": 25, "sal": 2276.32, "departamento": "Transporte Cana"},
     {"mat": "41105", "nome": "ANTONIO CARLOS TEIXEIRA", "funcao": "MOTORISTA III", "espec": "CAMINHAO", "dias": 25, "sal": 2276.32, "departamento": "Transporte Cana"},

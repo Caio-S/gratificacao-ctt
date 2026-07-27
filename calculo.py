@@ -75,10 +75,13 @@ def _novo_agregado(base):
     }
 
 
-def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, parametros, ajustes=None):
+def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, parametros, ajustes=None, jornada=None):
     """Tt: agrega pesagens por colaborador e calcula a gratificacao de cada um.
     Devolve {"lista": [...], "nSem": N}."""
     ajustes = ajustes or {}
+    jornada = jornada or {}
+    periodo_inicio_iso = periodo_inicio.isoformat() if periodo_inicio else None
+    periodo_fim_iso = periodo_fim.isoformat() if periodo_fim else None
     parametros = dict(parametros)
     parametros["_diasBase"] = dias_base
     especialidades = parametros["especialidades"]
@@ -229,6 +232,10 @@ def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, par
         k["totalReceber"] = k["sal"] + gratif
         k["kmMed"] = k["kmSoma"] / k["viagens"] if k["viagens"] else 0
         k["diasTrabalhados"] = _dias_trabalhados_periodo(k.get("admissao"), periodo_inicio, periodo_fim, dias_base)
+        k["faltas"] = [
+            r for r in jornada.get(k["mat"], [])
+            if periodo_inicio_iso is None or (periodo_inicio_iso <= r["data"] <= periodo_fim_iso)
+        ]
         resultado.append(k)
 
     lista = [k for k in resultado if k["espec"] in ("CAMINHAO", "BATE-VOLTA", "COLHEDORA", "TRANSBORDO")]

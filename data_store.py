@@ -83,7 +83,7 @@ def _get_many(chaves_com_padroes):
 def get_dados_bundle():
     """Tudo que a rota /api/dados precisa, numa unica ida ao banco."""
     valores = _get_many({
-        "funcionarios": [], "pesagens": [], "frotas": [],
+        "funcionarios": [], "pesagens": [], "frotas": [], "jornada": {},
         "periodo": _DEFAULT_PERIODO, "dias_base": _DEFAULT_DIAS_BASE,
     })
     funcionarios = valores["funcionarios"]
@@ -92,12 +92,14 @@ def get_dados_bundle():
     pesagens = valores["pesagens"]
     for p in pesagens:
         p["data"] = _texto_para_data(p.get("data"))
+    jornada = valores["jornada"]
     return {
         "funcionarios": funcionarios,
         "pesagens": pesagens,
         "frotas": valores["frotas"],
         "periodo": valores["periodo"],
         "dias_base": valores["dias_base"],
+        "jornada_resumo": {"matriculas": len(jornada), "registros": sum(len(v) for v in jornada.values())},
     }
 
 
@@ -105,7 +107,7 @@ def get_calculo_inputs():
     """Tudo que a rota /api/calculo precisa, numa unica ida ao banco."""
     valores = _get_many({
         "funcionarios": [], "pesagens": [], "dias_base": _DEFAULT_DIAS_BASE,
-        "parametros": None, "ajustes": {}, "periodo": _DEFAULT_PERIODO,
+        "parametros": None, "ajustes": {}, "periodo": _DEFAULT_PERIODO, "jornada": {},
     })
     funcionarios = valores["funcionarios"]
     for f in funcionarios:
@@ -124,6 +126,7 @@ def get_calculo_inputs():
         "parametros": parametros,
         "ajustes": valores["ajustes"],
         "periodo": valores["periodo"],
+        "jornada": valores["jornada"],
     }
 
 
@@ -157,6 +160,14 @@ def get_frotas():
 
 def set_frotas(lista):
     _set("frotas", lista)
+
+
+def get_jornada():
+    return _get("jornada", {})
+
+
+def set_jornada(mapa):
+    _set("jornada", mapa)
 
 
 def get_parametros():
@@ -377,3 +388,4 @@ def limpar_tudo():
     _set("funcionarios", [])
     _set("pesagens", [])
     _set("frotas", [])
+    _set("jornada", {})

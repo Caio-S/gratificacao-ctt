@@ -190,6 +190,24 @@ def import_pesagens():
     })
 
 
+@app.route("/api/import/jornada", methods=["POST"])
+@requer_papel("coordenador", "gerente", "diretoria")
+def import_jornada():
+    arquivo = request.files.get("arquivo")
+    if not arquivo:
+        return jsonify({"error": "Nenhum arquivo enviado."}), 400
+    try:
+        matriz = _ler_matriz(arquivo)
+        mapa = parsers.parse_jornada(matriz)
+    except parsers.ErroImportacao as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": f"Falha ao importar jornada: {exc}"}), 400
+    data_store.set_jornada(mapa)
+    total_registros = sum(len(v) for v in mapa.values())
+    return jsonify({"ok": True, "totalMatriculas": len(mapa), "totalRegistros": total_registros, "nomeArquivo": arquivo.filename})
+
+
 @app.route("/api/seed", methods=["POST"])
 @requer_papel("coordenador", "gerente", "diretoria")
 def seed_demo():
@@ -214,6 +232,7 @@ def get_dados():
         "frotas": d["frotas"],
         "periodo": d["periodo"],
         "diasBase": d["dias_base"],
+        "jornadaResumo": d["jornada_resumo"],
     })
 
 
@@ -289,7 +308,7 @@ def _calcular_atual():
     if not inicio or not fim:
         return None, d
     resultado = calculo.calcular(
-        d["funcionarios"], d["pesagens"], inicio, fim, d["dias_base"], d["parametros"], d["ajustes"],
+        d["funcionarios"], d["pesagens"], inicio, fim, d["dias_base"], d["parametros"], d["ajustes"], d["jornada"],
     )
     return resultado, d
 

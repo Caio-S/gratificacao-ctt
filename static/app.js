@@ -25,10 +25,11 @@ const state = {
   filtroAprovacoes: { busca: '', especialidade: 'TODOS', departamento: 'TODOS', soComAjuste: false },
   extratoRelatorioModalAberto: false,
   extratoRelatorioIntervalo: null,
+  faltasModalMat: null,
 };
 
 /* dados carregados do backend (funcionarios/pesagens/frotas/periodo) */
-let DADOS = { funcionarios: [], pesagens: [], frotas: [], periodo: { inicio: null, fim: null }, diasBase: 25 };
+let DADOS = { funcionarios: [], pesagens: [], frotas: [], periodo: { inicio: null, fim: null }, diasBase: 25, jornadaResumo: { matriculas: 0, registros: 0 } };
 let PARAMS = null;
 let CALC = null;
 let USUARIOS_LISTA = [];
@@ -943,7 +944,9 @@ function linhaCalculo(k) {
       <td class="tag-sem">${esc(k.departamento || 'Não informado')}</td>
       <td class="num tag-sem">${admissao}</td>
       <td>${badgeEspec(k.espec)}</td>
-      <td class="num">${k.diasTrabalhados}</td>
+      <td class="num">${k.diasTrabalhados}${(k.faltas && k.faltas.length)
+        ? ` <button type="button" class="btn peq sec" data-faltas="${esc(k.mat)}" title="Ver dias sem expediente (folgas, atestados, feriados...)">🗓️ ${k.faltas.length}</button>`
+        : ''}</td>
       <td class="num">${k.viagens}</td>
       <td class="num">${numBR(k.ton, 1)}</td>
       <td class="num">${k.kmMed ? numBR(k.kmMed, 0) : '—'}</td>
@@ -1037,6 +1040,34 @@ function renderAjusteModal() {
     </div>`;
 }
 
+function renderFaltasModal() {
+  const mat = state.faltasModalMat;
+  if (!mat) return '';
+  const k = (CALC.lista || []).find(x => x.mat === mat);
+  if (!k) return '';
+  const faltas = k.faltas || [];
+  return `
+    <div class="modal-ov no-print" id="faltasModalOv">
+      <div class="modal-box" id="faltasModalBox">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <h3>Dias sem expediente — ${esc(k.mat)}${state.exibirNomes ? ' · ' + esc(k.nome) : ''}</h3>
+          <button class="modal-fecha" id="faltasModalFechar">×</button>
+        </div>
+        <div class="dica">Dias do período em que a escala (relatório de jornada importado) não teve horário normal de turno — inclui folgas (D.S.R., feriado, férias, compensado) e afastamentos (atestado). É a escala planejada pelo RH, não o ponto batido — não indica falta não programada.</div>
+        <div class="scroll-x" style="margin-top:10px">
+          <table>
+            <thead><tr><th>Dia</th><th>Motivo</th></tr></thead>
+            <tbody>
+              ${faltas.length
+                ? faltas.map(fa => `<tr><td>${brDate(fa.data)}</td><td>${esc(fa.motivo)}</td></tr>`).join('')
+                : '<tr><td colspan="2" style="text-align:center;padding:20px;color:var(--muted)">Sem dias registrados nesse período.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+}
+
 function renderCalculo() {
   if (!CALC) return placeholder('Cálculo');
   const f = state.filtroCalculo;
@@ -1103,7 +1134,8 @@ function renderCalculo() {
       </div>
     </div>
     ${secoes || '<div class="cartao"><div style="text-align:center;padding:24px;color:var(--muted)">Sem dados — importe as bases ou carregue a demonstração na aba Dados.</div></div>'}
-    ${renderAjusteModal()}`;
+    ${renderAjusteModal()}
+    ${renderFaltasModal()}`;
 }
 function wireCalculo() {
   const f = state.filtroCalculo;
@@ -1133,6 +1165,20 @@ function wireCalculo() {
       render();
     };
   });
+  $('#main').querySelectorAll('[data-faltas]').forEach(btn => {
+    btn.onclick = e => {
+      e.stopPropagation();
+      state.faltasModalMat = btn.dataset.faltas;
+      render();
+    };
+  });
+  const ovFaltas = $('#faltasModalOv');
+  if (ovFaltas) {
+    const fecharFaltas = () => { state.faltasModalMat = null; render(); };
+    ovFaltas.onclick = fecharFaltas;
+    $('#faltasModalBox').onclick = e => e.stopPropagation();
+    $('#faltasModalFechar').onclick = fecharFaltas;
+  }
   const btnPdf = $('#btnExportarCalculoPdf');
   if (btnPdf) btnPdf.onclick = () => window.print();
   const btnXlsx = $('#btnExportarCalculoXlsx');
@@ -1476,6 +1522,15 @@ function renderDados() {
       <label class="zona" id="zonaPesagens"><b>Clique para escolher o arquivo</b><br>ou arraste o .xlsx aqui
         <input type="file" id="f_pesagens" accept=".xlsx" style="display:none">
       </label>
+    </div>
+
+    <div class="cartao">
+      <h2>Jornada / escala</h2>
+      <div class="dica">Relatório de RH com matrícula, data e descrição da jornada — usado pra mostrar, no Cálculo, os dias sem expediente (D.S.R., feriado, férias, atestado, compensado) de cada colaborador.</div>
+      <label class="zona" id="zonaJornada"><b>Clique para escolher o arquivo</b><br>ou arraste o .xlsx aqui
+        <input type="file" id="f_jornada" accept=".xlsx" style="display:none">
+      </label>
+      ${d.jornadaResumo && d.jornadaResumo.registros ? `<div class="tag-sem" style="margin-top:8px">Carregado: ${d.jornadaResumo.registros} dias sem expediente em ${d.jornadaResumo.matriculas} matrículas.</div>` : ''}
     </div>` : '';
 
   const acoesResumo = podeImportar() ? `
@@ -1532,6 +1587,7 @@ function wireDados() {
   upload('#f_pesagens', '/import/pesagens', r => r.temKm
     ? `${r.total} pesagens importadas de "${r.nomeArquivo}".`
     : `${r.total} pesagens importadas, mas a coluna de km/raio não foi encontrada — km vai ficar zerado.`);
+  upload('#f_jornada', '/import/jornada', r => `${r.totalRegistros} dias sem expediente em ${r.totalMatriculas} matrículas, de "${r.nomeArquivo}".`);
 
   const btnDemo = $('#btnDemo');
   if (btnDemo) btnDemo.onclick = async () => {
