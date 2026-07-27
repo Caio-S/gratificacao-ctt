@@ -141,7 +141,8 @@ tr.linha-clic:hover td{background:#EAF1E7}
 @page{size:landscape;margin:10mm}
 @media print{
   .abas,.btn,.no-print,.aviso,input,select,.col-acoes{display:none!important}
-  .app{background:#fff}
+  .app{background:#fff;min-height:0}
+  html,body{height:auto;min-height:0}
   .topo{padding:4px 20px 3px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .topo h1{font-size:16px}
   .topo .sub{margin:1px 0 4px;font-size:9px}
