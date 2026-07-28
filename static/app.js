@@ -1502,10 +1502,8 @@ function renderDados() {
     <div class="grade2">
       <div class="cartao">
         <h2>Funcionários / motoristas</h2>
-        <div class="dica">Planilha com matrícula, nome, função, especialidade e departamento.</div>
-        <label class="zona" id="zonaFuncionarios"><b>Clique para escolher o arquivo</b><br>ou arraste o .xlsx aqui
-          <input type="file" id="f_funcionarios" accept=".xlsx" style="display:none">
-        </label>
+        <div class="dica">Busca direto do sistema da empresa (mesma base do RH) — matrícula, nome, função, departamento e admissão dos colaboradores ativos. Sem upload de planilha: é só clicar pra atualizar.</div>
+        <button class="btn sec" id="btnAtualizarFuncionarios">Atualizar funcionários</button>
       </div>
       <div class="cartao">
         <h2>Disponibilidade de frotas</h2>
@@ -1594,11 +1592,22 @@ function wireDados() {
     }));
     zona.addEventListener('drop', e => processar(e.dataTransfer.files[0]));
   };
-  upload('#f_funcionarios', '#zonaFuncionarios', '/import/funcionarios', r => `${r.total} funcionários importados de "${r.nomeArquivo}".`);
   upload('#f_frotas', '#zonaFrotas', '/import/frotas', r => `Disponibilidade importada: ${r.total} frotas.`);
   upload('#f_pesagens', '#zonaPesagens', '/import/pesagens', r => r.temKm
     ? `${r.total} pesagens importadas de "${r.nomeArquivo}".`
     : `${r.total} pesagens importadas, mas a coluna de km/raio não foi encontrada — km vai ficar zerado.`);
+
+  const btnFuncionarios = $('#btnAtualizarFuncionarios');
+  if (btnFuncionarios) btnFuncionarios.onclick = async () => {
+    setBtnLoading(btnFuncionarios, true);
+    try {
+      const r = await api('/funcionarios/atualizar', { method: 'POST' });
+      await carregarDados();
+      render();
+      showToast('ok', `${r.total} funcionários atualizados.`);
+    } catch (err) { showToast('erro', err.message); }
+    finally { setBtnLoading(btnFuncionarios, false); }
+  };
 
   const btnJornada = $('#btnAtualizarJornada');
   if (btnJornada) btnJornada.onclick = async () => {

@@ -41,3 +41,21 @@ def buscar_jornada(periodo_inicio, periodo_fim):
         return colunas, linhas
     finally:
         conn.close()
+
+
+def buscar_funcionarios():
+    """Devolve (colunas, linhas) da vw_funcionarios_ativos_atual pra CRV-MG -
+    view historica (traz tambem desligados), o filtro de situacao ativa e
+    feito no parser (parsers.parse_funcionarios_mariadb)."""
+    conn = _conectar()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT a.* FROM vw_funcionarios_ativos_atual a WHERE a.id_empresa = %s",
+                (_CODIGO_EMPRESA_CRV_MG,),
+            )
+            colunas = [d[0] for d in cur.description]
+            linhas = cur.fetchall()
+        return colunas, linhas
+    finally:
+        conn.close()

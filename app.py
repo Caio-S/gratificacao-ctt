@@ -136,21 +136,16 @@ def _pesagem_json(p):
     return d
 
 
-@app.route("/api/import/funcionarios", methods=["POST"])
+@app.route("/api/funcionarios/atualizar", methods=["POST"])
 @requer_papel("coordenador", "gerente", "diretoria")
-def import_funcionarios():
-    arquivo = request.files.get("arquivo")
-    if not arquivo:
-        return jsonify({"error": "Nenhum arquivo enviado."}), 400
+def atualizar_funcionarios():
     try:
-        matriz = _ler_matriz(arquivo)
-        lista = parsers.parse_funcionarios(matriz, data_store.get_dias_base())
-    except parsers.ErroImportacao as exc:
-        return jsonify({"error": str(exc)}), 400
-    except Exception as exc:  # arquivo corrompido, formato inesperado etc.
-        return jsonify({"error": f"Falha ao importar funcionários: {exc}"}), 400
+        colunas, linhas = mariadb_client.buscar_funcionarios()
+        lista = parsers.parse_funcionarios_mariadb(colunas, linhas, data_store.get_dias_base())
+    except Exception as exc:
+        return jsonify({"error": f"Falha ao buscar funcionários no sistema da empresa: {exc}"}), 400
     data_store.set_funcionarios(lista)
-    return jsonify({"ok": True, "total": len(lista), "nomeArquivo": arquivo.filename})
+    return jsonify({"ok": True, "total": len(lista)})
 
 
 @app.route("/api/import/frotas", methods=["POST"])
