@@ -272,6 +272,17 @@ def limpar_dados():
     return "", 204
 
 
+@app.route("/api/dados/<base>", methods=["DELETE"])
+@requer_papel("gerente", "diretoria")
+def limpar_uma_base(base):
+    """Zera so uma base (ex.: pesagens) pra permitir subir um arquivo novo sem
+    derrubar as outras."""
+    if base not in data_store.BASES_LIMPAVEIS:
+        return jsonify({"error": "Base desconhecida."}), 400
+    data_store.limpar_base(base)
+    return "", 204
+
+
 @app.route("/api/periodo", methods=["PUT"])
 @requer_papel("gerente", "diretoria")
 def set_periodo():

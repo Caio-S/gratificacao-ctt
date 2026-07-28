@@ -66,6 +66,65 @@ async function api(path, opts) {
   return res.json();
 }
 
+/* =============== modal de progresso de upload =============== */
+/* fica pendurado no body (e nao no #main) pra sobreviver aos render() que
+   acontecem durante o envio */
+const tamanhoBR = b => b >= 1048576 ? `${numBR(b / 1048576, 1)} MB` : `${numBR(b / 1024, 0)} KB`;
+
+function abrirModalProgresso(titulo, arquivo) {
+  fecharModalProgresso();
+  const ov = document.createElement('div');
+  ov.className = 'modal-ov no-print';
+  ov.id = 'progressoOv';
+  ov.innerHTML = `
+    <div class="modal-box" style="max-width:460px">
+      <h3>${esc(titulo)}</h3>
+      <div class="dica" style="margin:4px 0 0">${esc(arquivo.name)} · ${tamanhoBR(arquivo.size)}</div>
+      <div class="barra-prog"><i id="progBarra"></i></div>
+      <div class="linha-prog"><span id="progTexto">Preparando envio…</span><span class="mono" id="progPct"></span></div>
+    </div>`;
+  document.body.appendChild(ov);
+}
+
+function atualizarProgresso({ pct, texto, indeterminada }) {
+  const barra = $('#progBarra'), txt = $('#progTexto'), lbl = $('#progPct');
+  if (!barra) return;
+  barra.classList.toggle('indeterminada', !!indeterminada);
+  if (!indeterminada && pct != null) barra.style.width = pct + '%';
+  if (texto) txt.textContent = texto;
+  lbl.textContent = indeterminada || pct == null ? '' : pct + '%';
+}
+
+function fecharModalProgresso() {
+  const ov = $('#progressoOv');
+  if (ov) ov.remove();
+}
+
+/* envia o arquivo por XHR (o fetch nao expoe progresso de upload) e vai
+   alimentando a barra: % enquanto sobe, indeterminada enquanto o servidor
+   processa a planilha */
+function enviarArquivoComProgresso(endpoint, arquivo) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api' + endpoint);
+    xhr.upload.onprogress = e => {
+      if (!e.lengthComputable) return;
+      const pct = Math.round(100 * e.loaded / e.total);
+      atualizarProgresso({ pct, texto: `Enviando… ${tamanhoBR(e.loaded)} de ${tamanhoBR(e.total)}` });
+    };
+    xhr.upload.onload = () => atualizarProgresso({ indeterminada: true, texto: 'Arquivo recebido — processando a planilha…' });
+    xhr.onload = () => {
+      let corpo = null;
+      try { corpo = JSON.parse(xhr.responseText); } catch (_) {}
+      if (xhr.status >= 200 && xhr.status < 300) resolve(corpo);
+      else reject(new Error((corpo && corpo.error) || `Erro ${xhr.status} ao enviar o arquivo.`));
+    };
+    xhr.onerror = () => reject(new Error('Falha de conexão ao enviar o arquivo.'));
+    xhr.ontimeout = () => reject(new Error('O envio demorou demais e foi interrompido.'));
+    xhr.send((() => { const fd = new FormData(); fd.append('arquivo', arquivo); return fd; })());
+  });
+}
+
 async function carregarDados() {
   DADOS = await api('/dados');
   atualizarSubPeriodo();
@@ -1577,13 +1636,20 @@ function renderDados() {
       <div class="dica">Período de ${brDate(d.periodo.inicio)} a ${brDate(d.periodo.fim)} · dias-base ${d.diasBase}. Somente Gerente/Diretoria podem alterar.</div>
     </div>`;
 
+  /* botao de apagar so daquela base — permite subir arquivo novo sem derrubar
+     as outras. So Gerente/Diretoria, igual ao "Limpar tudo". */
+  const btnApagar = (base, rotulo, qtd) => podeAdministrar() && qtd
+    ? `<button type="button" class="btn peq sec" data-apagarbase="${base}" data-rotulo="${esc(rotulo)}" style="color:var(--vermelho);border-color:var(--vermelho);margin-top:10px">Apagar ${esc(rotulo)}</button>`
+    : '';
+
   const importBloco = podeImportar() ? `
     <div class="grade2">
       <div class="cartao">
         <h2>Funcionários / motoristas</h2>
         <div class="dica">Busca direto do sistema da empresa (mesma base do RH) — matrícula, nome, função, departamento e admissão dos colaboradores ativos. Sem upload de planilha: é só clicar pra atualizar.</div>
         <button class="btn sec" id="btnAtualizarFuncionarios">Atualizar funcionários</button>
-        ${d.funcionariosAtualizadoEm ? `<div class="tag-sem" style="margin-top:8px">Atualizado ${tempoRelativo(d.funcionariosAtualizadoEm)}</div>` : ''}
+        ${d.funcionarios.length ? `<div class="tag-sem" style="margin-top:8px">${d.funcionarios.length} carregados${d.funcionariosAtualizadoEm ? ` · atualizado ${tempoRelativo(d.funcionariosAtualizadoEm)}` : ''}.</div>` : ''}
+        ${btnApagar('funcionarios', 'funcionários', d.funcionarios.length)}
       </div>
       <div class="cartao">
         <h2>Disponibilidade de frotas</h2>
@@ -1591,15 +1657,19 @@ function renderDados() {
         <label class="zona" id="zonaFrotas"><b>Clique para escolher o arquivo</b><br>ou arraste o .xlsx aqui
           <input type="file" id="f_frotas" accept=".xlsx" style="display:none">
         </label>
+        ${d.frotas.length ? `<div class="tag-sem" style="margin-top:8px">${d.frotas.length} frotas carregadas.</div>` : ''}
+        ${btnApagar('frotas', 'disponibilidade', d.frotas.length)}
       </div>
     </div>
 
     <div class="cartao">
       <h2>Pesagens / produção</h2>
-      <div class="dica">Planilha com matrícula, data, peso, km/raio e frota de cada viagem.</div>
+      <div class="dica">Planilha com matrícula, data, peso, km/raio e frota de cada viagem. Cada importação substitui a anterior — use "Apagar pesagens" se quiser zerar antes de subir um arquivo novo.</div>
       <label class="zona" id="zonaPesagens"><b>Clique para escolher o arquivo</b><br>ou arraste o .xlsx aqui
         <input type="file" id="f_pesagens" accept=".xlsx" style="display:none">
       </label>
+      ${d.pesagens.length ? `<div class="tag-sem" style="margin-top:8px">${d.pesagens.length.toLocaleString('pt-BR')} pesagens carregadas.</div>` : ''}
+      ${btnApagar('pesagens', 'pesagens', d.pesagens.length)}
     </div>
 
     <div class="cartao">
@@ -1607,6 +1677,7 @@ function renderDados() {
       <div class="dica">Busca a escala direto do sistema da empresa (mesma base do RH) pro período de apuração atual — usado pra mostrar, no Cálculo, os dias sem expediente (D.S.R., feriado, férias, atestado, compensado) de cada colaborador. Sem upload de planilha: é só clicar pra atualizar.</div>
       <button class="btn sec" id="btnAtualizarJornada">Atualizar jornada</button>
       ${d.jornadaResumo && d.jornadaResumo.registros ? `<div class="tag-sem" style="margin-top:8px">Carregado: ${d.jornadaResumo.registros} dias sem expediente em ${d.jornadaResumo.matriculas} matrículas${d.jornadaResumo.atualizadoEm ? ` · atualizado ${tempoRelativo(d.jornadaResumo.atualizadoEm)}` : ''}.</div>` : ''}
+      ${btnApagar('jornada', 'jornada', (d.jornadaResumo && d.jornadaResumo.matriculas) || 0)}
     </div>` : '';
 
   const acoesResumo = podeImportar() ? `
@@ -1643,18 +1714,23 @@ function wireDados() {
     finally { setBtnLoading(btn, false); }
   };
 
-  const upload = (inputId, zonaId, endpoint, labelOk) => {
+  const upload = (inputId, zonaId, endpoint, titulo, labelOk) => {
     const el = $(inputId);
     if (!el) return;
     const processar = async arquivo => {
       if (!arquivo) return;
-      const fd = new FormData(); fd.append('arquivo', arquivo);
+      abrirModalProgresso(titulo, arquivo);
       try {
-        const r = await api(endpoint, { method: 'POST', body: fd });
+        const r = await enviarArquivoComProgresso(endpoint, arquivo);
+        atualizarProgresso({ indeterminada: true, texto: 'Atualizando a tela…' });
         await carregarDados();
+        fecharModalProgresso();
         render();
         showToast('ok', labelOk(r));
-      } catch (err) { showToast('erro', err.message); }
+      } catch (err) {
+        fecharModalProgresso();
+        showToast('erro', err.message);
+      }
     };
     el.onchange = async e => {
       await processar(e.target.files[0]);
@@ -1672,10 +1748,24 @@ function wireDados() {
     }));
     zona.addEventListener('drop', e => processar(e.dataTransfer.files[0]));
   };
-  upload('#f_frotas', '#zonaFrotas', '/import/frotas', r => `Disponibilidade importada: ${r.total} frotas.`);
-  upload('#f_pesagens', '#zonaPesagens', '/import/pesagens', r => r.temKm
+  upload('#f_frotas', '#zonaFrotas', '/import/frotas', 'Importando disponibilidade de frotas', r => `Disponibilidade importada: ${r.total} frotas.`);
+  upload('#f_pesagens', '#zonaPesagens', '/import/pesagens', 'Importando pesagens / produção', r => r.temKm
     ? `${r.total} pesagens importadas de "${r.nomeArquivo}".`
     : `${r.total} pesagens importadas, mas a coluna de km/raio não foi encontrada — km vai ficar zerado.`);
+
+  $('#main').querySelectorAll('[data-apagarbase]').forEach(btn => {
+    btn.onclick = async () => {
+      const base = btn.dataset.apagarbase, rotulo = btn.dataset.rotulo;
+      if (!confirm(`Apagar os dados de ${rotulo}? As outras bases continuam como estão.`)) return;
+      setBtnLoading(btn, true);
+      try {
+        await api(`/dados/${base}`, { method: 'DELETE' });
+        await carregarDados();
+        render();
+        showToast('ok', `Dados de ${rotulo} apagados.`);
+      } catch (e) { showToast('erro', e.message); setBtnLoading(btn, false); }
+    };
+  });
 
   const btnFuncionarios = $('#btnAtualizarFuncionarios');
   if (btnFuncionarios) btnFuncionarios.onclick = async () => {

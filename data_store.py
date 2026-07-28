@@ -413,8 +413,17 @@ def desfazer_aprovacao_gratificacao(mats, papel, periodo_inicio, periodo_fim):
         )
 
 
+BASES_LIMPAVEIS = {"funcionarios": [], "pesagens": [], "frotas": [], "jornada": {}}
+
+
+def limpar_base(base):
+    """Zera so uma das bases importadas (ex.: pesagens), pra poder subir um
+    arquivo novo sem derrubar funcionarios/frotas/jornada junto."""
+    _set(base, BASES_LIMPAVEIS[base])
+    if base == "jornada":
+        _set("jornada_import_status", {"status": "ocioso"})
+
+
 def limpar_tudo():
-    _set("funcionarios", [])
-    _set("pesagens", [])
-    _set("frotas", [])
-    _set("jornada", {})
+    for base in BASES_LIMPAVEIS:
+        limpar_base(base)
