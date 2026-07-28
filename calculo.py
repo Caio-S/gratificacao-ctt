@@ -234,6 +234,10 @@ def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, par
         k["totalReceber"] = k["sal"] + gratif
         k["kmMed"] = k["kmSoma"] / k["viagens"] if k["viagens"] else 0
         k["diasTrabalhados"] = _dias_trabalhados_periodo(k.get("admissao"), periodo_inicio, periodo_fim, dias_base)
+        # meta prorata: quem foi admitido durante o periodo (ou nao participou
+        # dele inteiro) nao pode ter a meta cheia somada no agregado - senao o
+        # atingimento medio do grupo fica artificialmente baixo.
+        k["tetoEfetivo"] = k["teto"] * (k["diasTrabalhados"] / dias_base if dias_base else 0)
         entrada_jornada = jornada.get(k["mat"]) or {}
         todos_dias_jornada = entrada_jornada.get("dias") or []
         k["faltas"] = [

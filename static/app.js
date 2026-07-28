@@ -1087,7 +1087,7 @@ function renderCalculo() {
   const filtrado = calculoFiltrado();
   const departamentos = [...new Set(CALC.lista.map(k => k.departamento || 'Não informado'))].sort();
   const resumo = filtrado.reduce((acc, k) => {
-    acc.n++; acc.ton += k.ton; acc.viagens += k.viagens; acc.gratif += k.gratif; acc.sal += k.sal; acc.totalReceber += k.totalReceber; acc.teto += k.teto; acc.ajusteValor += k.ajusteValor || 0;
+    acc.n++; acc.ton += k.ton; acc.viagens += k.viagens; acc.gratif += k.gratif; acc.sal += k.sal; acc.totalReceber += k.totalReceber; acc.teto += k.tetoEfetivo ?? k.teto; acc.ajusteValor += k.ajusteValor || 0;
     return acc;
   }, { n: 0, ton: 0, viagens: 0, gratif: 0, sal: 0, totalReceber: 0, teto: 0, ajusteValor: 0 });
   const atingMedioPct = resumo.teto > 0 ? 100 * resumo.gratif / resumo.teto : 0;
@@ -1104,7 +1104,7 @@ function renderCalculo() {
       <div class="kpi"><div class="rot">Colaboradores</div><div class="val">${resumo.n}</div><div class="det">${f.especialidade === 'TODOS' ? 'todas as especialidades' : ESPEC_LABEL[f.especialidade] || f.especialidade}</div></div>
       <div class="kpi"><div class="rot">Toneladas no período</div><div class="val">${numBR(resumo.ton, 0)}</div><div class="det">${resumo.viagens.toLocaleString('pt-BR')} viagens</div></div>
       <div class="kpi"><div class="rot">Gratificação (R$)</div><div class="val">${numBR(resumo.gratif, 0)}</div><div class="det">prorata base ${diasBase} dias</div></div>
-      <div class="kpi"><div class="rot">Meta gratificação (R$)</div><div class="val">${numBR(resumo.teto, 0)}</div><div class="det">soma dos tetos dos ${resumo.n} colaboradores</div></div>
+      <div class="kpi"><div class="rot">Meta gratificação (R$)</div><div class="val">${numBR(resumo.teto, 0)}</div><div class="det">tetos prorata por admissão · ${resumo.n} colaboradores</div></div>
       <div class="kpi"><div class="rot">Atingimento médio</div><div class="val">${numBR(atingMedioPct, 1)}%</div><div class="det">R$ ${numBR(resumo.gratif, 0)} de R$ ${numBR(resumo.teto, 0)} da meta</div></div>
       <div class="kpi"><div class="rot">Média por colaborador (R$)</div><div class="val">${numBR(resumo.n ? resumo.gratif / resumo.n : 0, 0)}</div><div class="det">meta média R$ ${numBR(resumo.n ? resumo.teto / resumo.n : 0, 0)} por colaborador</div></div>
       ${resumo.ajusteValor ? `<div class="kpi" style="border-top-color:var(--azul)"><div class="rot">Ajustes manuais (R$)</div><div class="val" style="color:var(--azul)">+${numBR(resumo.ajusteValor, 0)}</div><div class="det">+${numBR(ajustePctSobreTotal, 1)}% sobre a gratificação sem ajustes</div></div>` : ''}
