@@ -1526,10 +1526,8 @@ function renderDados() {
 
     <div class="cartao">
       <h2>Jornada / escala</h2>
-      <div class="dica">Relatório de RH com matrícula, data e descrição da jornada — usado pra mostrar, no Cálculo, os dias sem expediente (D.S.R., feriado, férias, atestado, compensado) de cada colaborador.</div>
-      <label class="zona" id="zonaJornada"><b>Clique para escolher o arquivo</b><br>ou arraste o .xlsx aqui
-        <input type="file" id="f_jornada" accept=".xlsx" style="display:none">
-      </label>
+      <div class="dica">Busca a escala direto do sistema da empresa (mesma base do RH) pro período de apuração atual — usado pra mostrar, no Cálculo, os dias sem expediente (D.S.R., feriado, férias, atestado, compensado) de cada colaborador. Sem upload de planilha: é só clicar pra atualizar.</div>
+      <button class="btn sec" id="btnAtualizarJornada">Atualizar jornada</button>
       ${d.jornadaResumo && d.jornadaResumo.registros ? `<div class="tag-sem" style="margin-top:8px">Carregado: ${d.jornadaResumo.registros} dias sem expediente em ${d.jornadaResumo.matriculas} matrículas.</div>` : ''}
     </div>` : '';
 
@@ -1602,44 +1600,25 @@ function wireDados() {
     ? `${r.total} pesagens importadas de "${r.nomeArquivo}".`
     : `${r.total} pesagens importadas, mas a coluna de km/raio não foi encontrada — km vai ficar zerado.`);
 
-  const uploadAssincrono = (inputId, zonaId, endpoint, statusEndpoint, labelOk) => {
-    const el = $(inputId);
-    if (!el) return;
+  const btnJornada = $('#btnAtualizarJornada');
+  if (btnJornada) btnJornada.onclick = async () => {
+    setBtnLoading(btnJornada, true);
     const consultar = async () => {
       let st;
-      try { st = await api(statusEndpoint); } catch (err) { showToast('erro', err.message); return; }
+      try { st = await api('/import/jornada/status'); } catch (err) { showToast('erro', err.message); setBtnLoading(btnJornada, false); return; }
       if (st.status === 'processando') { setTimeout(consultar, 3000); return; }
+      setBtnLoading(btnJornada, false);
       if (st.status === 'erro') { showToast('erro', st.mensagem); return; }
       await carregarDados();
       render();
-      showToast('ok', labelOk(st));
+      showToast('ok', `${st.totalRegistros} dias sem expediente em ${st.totalMatriculas} matrículas.`);
     };
-    const processar = async arquivo => {
-      if (!arquivo) return;
-      const fd = new FormData(); fd.append('arquivo', arquivo);
-      try {
-        await api(endpoint, { method: 'POST', body: fd });
-        showToast('ok', 'Arquivo recebido — processando em segundo plano (pode levar 1-2 minutos para um arquivo grande)…');
-        setTimeout(consultar, 3000);
-      } catch (err) { showToast('erro', err.message); }
-    };
-    el.onchange = async e => {
-      await processar(e.target.files[0]);
-      e.target.value = '';
-    };
-    const zona = $(zonaId);
-    if (!zona) return;
-    ['dragenter', 'dragover'].forEach(evt => zona.addEventListener(evt, e => {
-      e.preventDefault(); e.stopPropagation();
-      zona.classList.add('arrastando');
-    }));
-    ['dragleave', 'dragend', 'drop'].forEach(evt => zona.addEventListener(evt, e => {
-      e.preventDefault(); e.stopPropagation();
-      zona.classList.remove('arrastando');
-    }));
-    zona.addEventListener('drop', e => processar(e.dataTransfer.files[0]));
+    try {
+      await api('/jornada/atualizar', { method: 'POST' });
+      showToast('ok', 'Buscando jornada no sistema da empresa — processando em segundo plano…');
+      setTimeout(consultar, 3000);
+    } catch (err) { showToast('erro', err.message); setBtnLoading(btnJornada, false); }
   };
-  uploadAssincrono('#f_jornada', '#zonaJornada', '/import/jornada', '/import/jornada/status', r => `${r.totalRegistros} dias sem expediente em ${r.totalMatriculas} matrículas, de "${r.nomeArquivo}".`);
 
   const btnDemo = $('#btnDemo');
   if (btnDemo) btnDemo.onclick = async () => {
