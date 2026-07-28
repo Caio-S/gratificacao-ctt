@@ -56,6 +56,9 @@ let PARAMS = null;
 let CALC = null;
 let USUARIOS_LISTA = [];
 let GRATIF_APROVACOES = {};
+/* periodos ja fechados (so os totais — o detalhe por colaborador fica guardado
+   no backend e sera a base da tela de acompanhamento por mes) */
+let FECHAMENTOS = [];
 
 async function api(path, opts) {
   const res = await fetch('/api' + path, opts);
@@ -146,6 +149,10 @@ async function carregarAprovacoesGratificacao() {
 
 async function carregarUsuarios() {
   USUARIOS_LISTA = await api('/usuarios');
+}
+
+async function carregarFechamentos() {
+  FECHAMENTOS = await api('/fechamentos');
 }
 
 function renderPreservandoFoco() {
@@ -245,6 +252,9 @@ async function setView(v) {
   }
   if (v === 'usuarios') {
     try { await carregarUsuarios(); } catch (e) { showAviso('erro', 'Falha ao carregar usuários: ' + e.message); }
+  }
+  if (v === 'dados') {
+    try { await carregarFechamentos(); } catch (e) { showAviso('erro', 'Falha ao carregar fechamentos: ' + e.message); }
   }
   render();
 }
@@ -1703,6 +1713,34 @@ function renderDados() {
         ${podeAdministrar() ? '<button class="btn sec" id="btnLimpar" style="color:var(--vermelho);border-color:var(--vermelho)">Limpar tudo</button>' : ''}
       </div>` : '';
 
+  const fechados = FECHAMENTOS || [];
+  const fechamentoBloco = podeImportar() ? `
+    <div class="cartao">
+      <h2>Fechamento do período</h2>
+      <div class="dica">Congela a gratificação de <b>${brDate(d.periodo.inicio)} a ${brDate(d.periodo.fim)}</b> num histórico permanente e já deixa a tela pronta pro próximo período. Ao fechar: a gratificação de cada colaborador fica salva, as pesagens, a disponibilidade de frotas, a jornada e os ajustes manuais do período são limpos, e o período avança automaticamente. As aprovações de cada mês ficam guardadas separadamente.</div>
+      ${ehDiretoria()
+        ? '<button class="btn" id="btnFecharPeriodo">Fechar período e abrir o próximo</button>'
+        : '<div class="tag-sem">Somente a Diretoria pode fechar o período.</div>'}
+      ${fechados.length ? `
+        <div style="margin-top:16px">
+          <div class="tag-sem" style="margin-bottom:6px">Períodos já fechados</div>
+          <div class="scroll-x">
+            <table>
+              <thead><tr><th>Período</th><th class="num">Colaboradores</th><th class="num">Toneladas</th><th class="num">Gratificação (R$)</th><th class="num">Salário + gratif. (R$)</th><th>Fechado</th></tr></thead>
+              <tbody>${fechados.map(f => `
+                <tr>
+                  <td>${brDate(f.periodo.inicio)} a ${brDate(f.periodo.fim)}</td>
+                  <td class="num">${f.resumo.colaboradores}</td>
+                  <td class="num">${numBR(f.resumo.ton, 0)}</td>
+                  <td class="num" style="font-weight:600;color:var(--verde-esc)">${numBR(f.resumo.gratif, 0)}</td>
+                  <td class="num">${numBR(f.resumo.totalReceber, 0)}</td>
+                  <td class="tag-sem">${esc((f.fechadoEm || '').slice(0, 10).split('-').reverse().join('/'))} por ${esc(f.fechadoPor || '—')}</td>
+                </tr>`).join('')}</tbody>
+            </table>
+          </div>
+        </div>` : ''}
+    </div>` : '';
+
   return `
     ${periodoBloco}
     ${importBloco}
@@ -1714,7 +1752,8 @@ function renderDados() {
         <div class="kpi"><div class="rot">Pesagens</div><div class="val">${d.pesagens.length}</div></div>
         <div class="kpi"><div class="rot">Frotas (disponibilidade)</div><div class="val">${d.frotas.length}</div></div>
       </div>
-    </div>`;
+    </div>
+    ${fechamentoBloco}`;
 }
 function wireDados() {
   const btnSalvarPeriodo = $('#btnSalvarPeriodo');
@@ -1783,6 +1822,26 @@ function wireDados() {
       } catch (e) { showToast('erro', e.message); setBtnLoading(btn, false); }
     };
   });
+
+  const btnFechar = $('#btnFecharPeriodo');
+  if (btnFechar) btnFechar.onclick = async () => {
+    const p = DADOS.periodo;
+    if (!confirm(`Fechar a gratificação de ${brDate(p.inicio)} a ${brDate(p.fim)}?\n\n` +
+      `• A gratificação de cada colaborador fica salva no histórico\n` +
+      `• Pesagens, frotas, jornada e ajustes manuais do período são limpos\n` +
+      `• O período avança para o mês seguinte\n\n` +
+      `Isso não pode ser desfeito pela tela.`)) return;
+    setBtnLoading(btnFechar, true);
+    try {
+      const r = await api('/fechamento', { method: 'POST' });
+      await carregarDados();
+      await carregarFechamentos();
+      CALC = null;
+      render();
+      showToast('ok', `Período fechado: ${r.resumo.colaboradores} colaboradores e R$ ${numBR(r.resumo.gratif, 0)} salvos. Novo período: ${brDate(r.novoPeriodo.inicio)} a ${brDate(r.novoPeriodo.fim)}.`);
+    } catch (e) { showToast('erro', e.message); }
+    finally { setBtnLoading(btnFechar, false); }
+  };
 
   const btnFuncionarios = $('#btnAtualizarFuncionarios');
   if (btnFuncionarios) btnFuncionarios.onclick = async () => {

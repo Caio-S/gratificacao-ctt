@@ -1,7 +1,8 @@
+import calendar
 import itertools
 import os
 import threading
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from functools import wraps
 from io import BytesIO
@@ -537,6 +538,98 @@ def listar_aprovacoes_gratificacao():
             "aprovadoDiretoriaPor": row["aprovado_diretoria_por"],
         }
     return jsonify(resultado)
+
+
+def _proximo_periodo(fim):
+    """O periodo seguinte comeca no dia seguinte ao fim e termina no mesmo dia
+    do mes seguinte: 16/06-15/07 fecha e abre 16/07-15/08."""
+    ano, mes = (fim.year + 1, 1) if fim.month == 12 else (fim.year, fim.month + 1)
+    ultimo_dia = calendar.monthrange(ano, mes)[1]
+    return fim + timedelta(days=1), date(ano, mes, min(fim.day, ultimo_dia))
+
+
+@app.route("/api/fechamentos", methods=["GET"])
+@requer_login
+def listar_fechamentos():
+    return jsonify(data_store.get_fechamentos_indice())
+
+
+@app.route("/api/fechamentos/<inicio>/<fim>", methods=["GET"])
+@requer_login
+def detalhe_fechamento(inicio, fim):
+    registro = data_store.get_fechamento(inicio, fim)
+    if not registro:
+        return jsonify({"error": "Período fechado não encontrado."}), 404
+    return jsonify(registro)
+
+
+@app.route("/api/fechamento", methods=["POST"])
+@requer_papel("diretoria")
+def fechar_periodo():
+    """Congela a gratificacao do periodo atual num snapshot, limpa os dados que
+    eram daquele periodo (pesagens, frotas, jornada e ajustes manuais) e avanca
+    o periodo de apuracao - deixando a tela pronta pra importar o mes seguinte.
+    As aprovacoes ficam onde estao: a tabela ja e escopada por periodo."""
+    resultado, d = _calcular_atual()
+    if resultado is None:
+        return jsonify({"error": "Período inválido."}), 400
+    periodo = d["periodo"]
+    fim = parse_data(periodo["fim"])
+
+    linhas = [
+        k for k in resultado["lista"]
+        if k["gratif"] > 0 and (k["viagens"] > 0 or k.get("ajustePct"))
+    ]
+    if not linhas:
+        return jsonify({"error": "Não há gratificação calculada neste período para fechar."}), 400
+
+    aprovacoes = data_store.listar_aprovacoes_gratificacao(periodo["inicio"], periodo["fim"])
+    campos = ("mat", "nome", "funcao", "departamento", "espec", "viagens", "ton", "kmMed", "sal",
+              "gratif", "teto", "tetoEfetivo", "atingPct", "ajustePct", "ajusteObs", "ajusteValor",
+              "totalReceber", "diasPeriodo", "diasTrabalhados", "diasTrabalhadosReal")
+    colaboradores = []
+    for k in linhas:
+        item = {c: k.get(c) for c in campos}
+        ap = aprovacoes.get(str(k["mat"])) or {}
+        item["aprovadoGerentePor"] = ap.get("aprovado_gerente_por")
+        item["aprovadoDiretoriaPor"] = ap.get("aprovado_diretoria_por")
+        colaboradores.append(item)
+
+    somar = lambda campo: round(sum(k.get(campo) or 0 for k in linhas), 2)
+    resumo = {
+        "colaboradores": len(colaboradores),
+        "viagens": sum(k["viagens"] for k in linhas),
+        "ton": somar("ton"),
+        "gratif": somar("gratif"),
+        "teto": somar("tetoEfetivo"),
+        "ajusteValor": somar("ajusteValor"),
+        "sal": somar("sal"),
+        "totalReceber": somar("totalReceber"),
+    }
+    registro = {
+        "periodo": periodo,
+        "diasBase": d["dias_base"],
+        "fechadoEm": datetime.now().isoformat(timespec="seconds"),
+        "fechadoPor": session["username"],
+        "parametros": d["parametros"],
+        "resumo": resumo,
+        "colaboradores": colaboradores,
+    }
+    data_store.salvar_fechamento(registro)
+
+    for base in ("pesagens", "frotas", "jornada"):
+        data_store.limpar_base(base)
+    data_store.limpar_ajustes()
+    data_store.descartar_ajustes_pendentes()
+
+    novo_inicio, novo_fim = _proximo_periodo(fim)
+    data_store.set_periodo(novo_inicio.isoformat(), novo_fim.isoformat())
+    return jsonify({
+        "ok": True,
+        "resumo": resumo,
+        "periodoFechado": periodo,
+        "novoPeriodo": {"inicio": novo_inicio.isoformat(), "fim": novo_fim.isoformat()},
+    })
 
 
 @app.route("/api/gratificacoes/aprovar", methods=["POST"])

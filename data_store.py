@@ -435,6 +435,48 @@ def desfazer_aprovacao_gratificacao(mats, papel, periodo_inicio, periodo_fim):
     return len(mats)
 
 
+# ---------- fechamento de periodo ----------
+# Cada periodo fechado vira um snapshot proprio (chave "fechamento:inicio_fim")
+# com a gratificacao final de cada colaborador. Um indice separado guarda so os
+# totais, pra listar os meses sem carregar todas as linhas de todos eles.
+
+def _chave_fechamento(inicio, fim):
+    return f"fechamento:{inicio}_{fim}"
+
+
+def get_fechamentos_indice():
+    return _get("fechamentos_indice", [])
+
+
+def get_fechamento(inicio, fim):
+    return _get(_chave_fechamento(inicio, fim), None)
+
+
+def salvar_fechamento(registro):
+    periodo = registro["periodo"]
+    _set(_chave_fechamento(periodo["inicio"], periodo["fim"]), registro)
+    resumo = {c: registro[c] for c in ("periodo", "diasBase", "fechadoEm", "fechadoPor", "resumo")}
+    # refechar o mesmo periodo substitui a entrada em vez de duplicar
+    indice = [
+        f for f in get_fechamentos_indice()
+        if not (f["periodo"]["inicio"] == periodo["inicio"] and f["periodo"]["fim"] == periodo["fim"])
+    ]
+    indice.append(resumo)
+    indice.sort(key=lambda f: f["periodo"]["inicio"], reverse=True)
+    _set("fechamentos_indice", indice)
+
+
+def limpar_ajustes():
+    """Os ajustes manuais sao guardados so por matricula, entao precisam ser
+    zerados ao virar o periodo - senao um ajuste justificado por um fato do mes
+    passado continuaria valendo no mes novo."""
+    _set("ajustes", {})
+
+
+def descartar_ajustes_pendentes():
+    _executar("UPDATE ctt_ajustes_pendentes SET status = 'descartado' WHERE status = 'pendente'")
+
+
 BASES_LIMPAVEIS = {"funcionarios": [], "pesagens": [], "frotas": [], "jornada": {}}
 
 
