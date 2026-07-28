@@ -387,30 +387,52 @@ def listar_aprovacoes_gratificacao(periodo_inicio, periodo_fim):
     return {r["mat"]: r for r in linhas}
 
 
+def _colunas_aprovacao(papel):
+    sufixo = "gerente" if papel == "gerente" else "diretoria"
+    return f"aprovado_{sufixo}", f"aprovado_{sufixo}_por", f"aprovado_{sufixo}_em"
+
+
+def _mats_unicas(mats):
+    """Sem repetidas: o ON CONFLICT DO UPDATE quebra se a mesma linha aparecer
+    duas vezes no mesmo comando."""
+    return list(dict.fromkeys(str(m) for m in mats if str(m).strip()))
+
+
 def aprovar_gratificacoes(mats, papel, usuario, periodo_inicio, periodo_fim):
-    coluna_flag = "aprovado_gerente" if papel == "gerente" else "aprovado_diretoria"
-    coluna_por = "aprovado_gerente_por" if papel == "gerente" else "aprovado_diretoria_por"
-    coluna_em = "aprovado_gerente_em" if papel == "gerente" else "aprovado_diretoria_em"
-    for mat in mats:
-        _executar(
-            f"""INSERT INTO ctt_gratificacao_aprovacoes (mat, periodo_inicio, periodo_fim, {coluna_flag}, {coluna_por}, {coluna_em})
-                VALUES (%s, %s, %s, true, %s, now())
-                ON CONFLICT (mat, periodo_inicio, periodo_fim)
-                DO UPDATE SET {coluna_flag} = true, {coluna_por} = %s, {coluna_em} = now()""",
-            (mat, periodo_inicio, periodo_fim, usuario, usuario),
-        )
+    """Grava o lote inteiro numa UNICA ida ao banco. Antes era um INSERT por
+    matricula: com algumas centenas de colaboradores selecionados isso passava
+    de um minuto e estourava o timeout do proxy (o usuario via erro 500)."""
+    mats = _mats_unicas(mats)
+    if not mats:
+        return
+    coluna_flag, coluna_por, coluna_em = _colunas_aprovacao(papel)
+    sql = f"""INSERT INTO ctt_gratificacao_aprovacoes (mat, periodo_inicio, periodo_fim, {coluna_flag}, {coluna_por}, {coluna_em})
+              VALUES %s
+              ON CONFLICT (mat, periodo_inicio, periodo_fim)
+              DO UPDATE SET {coluna_flag} = true, {coluna_por} = EXCLUDED.{coluna_por}, {coluna_em} = now()"""
+    linhas = [(mat, periodo_inicio, periodo_fim, True, usuario) for mat in mats]
+    pool = _obter_pool()
+    conn = pool.getconn()
+    try:
+        with conn, conn.cursor() as cur:
+            psycopg2.extras.execute_values(cur, sql, linhas, template="(%s, %s, %s, %s, %s, now())", page_size=1000)
+    finally:
+        pool.putconn(conn)
+    return len(mats)
 
 
 def desfazer_aprovacao_gratificacao(mats, papel, periodo_inicio, periodo_fim):
-    coluna_flag = "aprovado_gerente" if papel == "gerente" else "aprovado_diretoria"
-    coluna_por = "aprovado_gerente_por" if papel == "gerente" else "aprovado_diretoria_por"
-    coluna_em = "aprovado_gerente_em" if papel == "gerente" else "aprovado_diretoria_em"
-    for mat in mats:
-        _executar(
-            f"""UPDATE ctt_gratificacao_aprovacoes SET {coluna_flag} = false, {coluna_por} = NULL, {coluna_em} = NULL
-                WHERE mat = %s AND periodo_inicio = %s AND periodo_fim = %s""",
-            (mat, periodo_inicio, periodo_fim),
-        )
+    """Idem: um UPDATE so pra todas as matriculas do lote."""
+    mats = _mats_unicas(mats)
+    if not mats:
+        return
+    coluna_flag, coluna_por, coluna_em = _colunas_aprovacao(papel)
+    _executar(
+        f"""UPDATE ctt_gratificacao_aprovacoes SET {coluna_flag} = false, {coluna_por} = NULL, {coluna_em} = NULL
+            WHERE mat IN %s AND periodo_inicio = %s AND periodo_fim = %s""",
+        (tuple(mats), periodo_inicio, periodo_fim),
+    )
+    return len(mats)
 
 
 BASES_LIMPAVEIS = {"funcionarios": [], "pesagens": [], "frotas": [], "jornada": {}}

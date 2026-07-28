@@ -1508,12 +1508,14 @@ function wireAprovacoes() {
   if (btnAprovarGratif) btnAprovarGratif.onclick = async () => {
     const mats = [...document.querySelectorAll('.chkGratif:checked')].map(c => c.value);
     if (!mats.length) { showToast('erro', 'Selecione ao menos um colaborador.'); return; }
+    if (mats.length > 20 && !confirm(`Aprovar ${mats.length} colaboradores de uma vez, em seu nome (${USUARIO.papel})?`)) return;
     setBtnLoading(btnAprovarGratif, true);
     try {
-      await api('/gratificacoes/aprovar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mats }) });
+      const r = await api('/gratificacoes/aprovar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mats }) });
       await carregarAprovacoesGratificacao();
       render();
-      showToast('ok', `${mats.length} colaborador${mats.length > 1 ? 'es' : ''} aprovado${mats.length > 1 ? 's' : ''}.`);
+      const n = (r && r.total) || mats.length;
+      showToast('ok', `${n} colaborador${n > 1 ? 'es' : ''} aprovado${n > 1 ? 's' : ''}.`);
     } catch (e) { showToast('erro', e.message); }
     finally { setBtnLoading(btnAprovarGratif, false); }
   };
@@ -1521,12 +1523,14 @@ function wireAprovacoes() {
   if (btnDesfazerGratif) btnDesfazerGratif.onclick = async () => {
     const mats = [...document.querySelectorAll('.chkGratif:checked')].map(c => c.value);
     if (!mats.length) { showToast('erro', 'Selecione ao menos um colaborador.'); return; }
+    if (mats.length > 20 && !confirm(`Desfazer sua aprovação de ${mats.length} colaboradores de uma vez?`)) return;
     setBtnLoading(btnDesfazerGratif, true);
     try {
-      await api('/gratificacoes/desfazer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mats }) });
+      const r = await api('/gratificacoes/desfazer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mats }) });
       await carregarAprovacoesGratificacao();
       render();
-      showToast('ok', 'Aprovação desfeita para os selecionados.');
+      const n = (r && r.total) || mats.length;
+      showToast('ok', `Aprovação desfeita para ${n} colaborador${n > 1 ? 'es' : ''}.`);
     } catch (e) { showToast('erro', e.message); }
     finally { setBtnLoading(btnDesfazerGratif, false); }
   };

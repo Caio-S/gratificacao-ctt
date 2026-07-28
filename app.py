@@ -547,8 +547,8 @@ def aprovar_gratificacoes_rota():
     if not mats:
         return jsonify({"error": "Selecione ao menos um colaborador."}), 400
     periodo = data_store.get_periodo()
-    data_store.aprovar_gratificacoes(mats, session["papel"], session["username"], periodo["inicio"], periodo["fim"])
-    return jsonify({"ok": True})
+    total = data_store.aprovar_gratificacoes(mats, session["papel"], session["username"], periodo["inicio"], periodo["fim"])
+    return jsonify({"ok": True, "total": total})
 
 
 @app.route("/api/gratificacoes/desfazer", methods=["POST"])
@@ -559,8 +559,8 @@ def desfazer_aprovacao_gratificacao_rota():
     if not mats:
         return jsonify({"error": "Selecione ao menos um colaborador."}), 400
     periodo = data_store.get_periodo()
-    data_store.desfazer_aprovacao_gratificacao(mats, session["papel"], periodo["inicio"], periodo["fim"])
-    return jsonify({"ok": True})
+    total = data_store.desfazer_aprovacao_gratificacao(mats, session["papel"], periodo["inicio"], periodo["fim"])
+    return jsonify({"ok": True, "total": total})
 
 
 def _usuario_json(u):
