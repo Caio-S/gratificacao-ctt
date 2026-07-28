@@ -78,6 +78,49 @@ def parse_funcionarios(matriz, dias_base):
     return resultado
 
 
+def parse_funcionarios_mariadb(colunas, linhas, dias_base):
+    """Mk (variante MariaDB): funcionarios direto da vw_funcionarios_ativos_atual.
+    Mesma classificacao/filtro de funcao operacional do parse_funcionarios
+    (planilha), so que mapeando pelas colunas conhecidas da view - esquema
+    fixo, dispensa a heuristica de busca de cabecalho. A view traz o
+    historico completo (inclui desligados), entao filtra Situacao=Ativo
+    aqui."""
+    idx = {normalizar(c): i for i, c in enumerate(colunas)}
+
+    def val(linha, nome_col):
+        i = idx.get(nome_col)
+        return linha[i] if i is not None and i < len(linha) else None
+
+    resultado = []
+    for linha in linhas:
+        mat = str(val(linha, "MATRICULA") or "").strip()
+        if not valor_valido(mat):
+            continue
+        situacao = normalizar(val(linha, "SITUACAO"))
+        if situacao and situacao != "ATIVO":
+            continue
+        funcao = str(val(linha, "DESC_FUNCAO") or "").strip()
+        if funcao and not RE_FUNCAO_OPERACIONAL.search(normalizar(funcao)):
+            continue
+        depto = str(val(linha, "AGRUP_DEPARTAMENTO3") or "").strip()
+        admissao = parse_data(val(linha, "DATA_ADMISSAO_CORRIGIDA")) or parse_data(val(linha, "DATA_ADMISSAO"))
+        # a view nao tem coluna de "equipamento/especialidade" separada (como
+        # a planilha tinha) - quem distingue colhedora/transbordo/caminhao de
+        # verdade e o texto do departamento, a funcao sozinha costuma ser
+        # generica demais (ex.: "OP. DE MAQUINAS AGRICOLAS III").
+        resultado.append({
+            "mat": mat,
+            "nome": str(val(linha, "NOME") or "").strip(),
+            "funcao": funcao,
+            "espec": classificar_especialidade(f"{depto} {funcao}"),
+            "dias": dias_base,
+            "sal": 0,
+            "departamento": depto or "Não informado",
+            "admissao": admissao,
+        })
+    return resultado
+
+
 def parse_frotas(matriz):
     """Fk: relatorio de disponibilidade de frotas."""
     idx_cabecalho = -1

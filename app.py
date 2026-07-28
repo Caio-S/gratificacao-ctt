@@ -1,3 +1,4 @@
+import itertools
 import os
 import threading
 from datetime import date, datetime
@@ -15,6 +16,7 @@ from flask import Flask, jsonify, render_template, request, send_file, session
 import calculo
 import calculo_defaults
 import data_store
+import mariadb_client
 import parsers
 from utils import normalizar, parse_data
 
@@ -134,21 +136,16 @@ def _pesagem_json(p):
     return d
 
 
-@app.route("/api/import/funcionarios", methods=["POST"])
+@app.route("/api/funcionarios/atualizar", methods=["POST"])
 @requer_papel("coordenador", "gerente", "diretoria")
-def import_funcionarios():
-    arquivo = request.files.get("arquivo")
-    if not arquivo:
-        return jsonify({"error": "Nenhum arquivo enviado."}), 400
+def atualizar_funcionarios():
     try:
-        matriz = _ler_matriz(arquivo)
-        lista = parsers.parse_funcionarios(matriz, data_store.get_dias_base())
-    except parsers.ErroImportacao as exc:
-        return jsonify({"error": str(exc)}), 400
-    except Exception as exc:  # arquivo corrompido, formato inesperado etc.
-        return jsonify({"error": f"Falha ao importar funcionários: {exc}"}), 400
+        colunas, linhas = mariadb_client.buscar_funcionarios()
+        lista = parsers.parse_funcionarios_mariadb(colunas, linhas, data_store.get_dias_base())
+    except Exception as exc:
+        return jsonify({"error": f"Falha ao buscar funcionários no sistema da empresa: {exc}"}), 400
     data_store.set_funcionarios(lista)
-    return jsonify({"ok": True, "total": len(lista), "nomeArquivo": arquivo.filename})
+    return jsonify({"ok": True, "total": len(lista)})
 
 
 @app.route("/api/import/frotas", methods=["POST"])
@@ -191,38 +188,35 @@ def import_pesagens():
     })
 
 
-def _processar_jornada_async(conteudo, nome_arquivo):
-    """Roda em thread separada - o relatorio de jornada tem 100k+ linhas e
-    processar tudo dentro da própria requisição HTTP estoura o timeout fixo
-    do proxy do Render (~30s), mesmo com o parser otimizado. Por isso a rota
-    devolve na hora e isso aqui atualiza o status que o front fica consultando."""
+def _processar_jornada_async(periodo_inicio, periodo_fim):
+    """Roda em thread separada - buscar e processar a jornada (100k+ linhas)
+    dentro da própria requisição HTTP estoura o timeout fixo do proxy do
+    Render (~30s). Por isso a rota devolve na hora e isso aqui atualiza o
+    status que o front fica consultando."""
     try:
-        wb = openpyxl.load_workbook(BytesIO(conteudo), data_only=True, read_only=True)
-        try:
-            mapa = parsers.parse_jornada(wb.worksheets[0].iter_rows(values_only=True))
-        finally:
-            wb.close()
+        colunas, linhas = mariadb_client.buscar_jornada(periodo_inicio, periodo_fim)
+        mapa = parsers.parse_jornada(itertools.chain([colunas], linhas))
         data_store.set_jornada(mapa)
         total_registros = sum(len(v.get("faltas", [])) for v in mapa.values())
         data_store.set_jornada_import_status({
             "status": "concluido", "totalMatriculas": len(mapa), "totalRegistros": total_registros,
-            "nomeArquivo": nome_arquivo,
+            "periodoInicio": periodo_inicio, "periodoFim": periodo_fim,
         })
     except parsers.ErroImportacao as exc:
         data_store.set_jornada_import_status({"status": "erro", "mensagem": str(exc)})
     except Exception as exc:
-        data_store.set_jornada_import_status({"status": "erro", "mensagem": f"Falha ao importar jornada: {exc}"})
+        data_store.set_jornada_import_status({"status": "erro", "mensagem": f"Falha ao buscar jornada no sistema da empresa: {exc}"})
 
 
-@app.route("/api/import/jornada", methods=["POST"])
+@app.route("/api/jornada/atualizar", methods=["POST"])
 @requer_papel("coordenador", "gerente", "diretoria")
-def import_jornada():
-    arquivo = request.files.get("arquivo")
-    if not arquivo:
-        return jsonify({"error": "Nenhum arquivo enviado."}), 400
-    conteudo = arquivo.read()
+def atualizar_jornada():
+    periodo = data_store.get_periodo()
+    inicio, fim = periodo.get("inicio"), periodo.get("fim")
+    if not inicio or not fim:
+        return jsonify({"error": "Período de apuração inválido."}), 400
     data_store.set_jornada_import_status({"status": "processando"})
-    threading.Thread(target=_processar_jornada_async, args=(conteudo, arquivo.filename), daemon=True).start()
+    threading.Thread(target=_processar_jornada_async, args=(inicio, fim), daemon=True).start()
     return jsonify({"status": "processando"}), 202
 
 
