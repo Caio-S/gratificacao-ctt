@@ -35,9 +35,12 @@ body{margin:0;background:var(--bg)}
 table{border-collapse:collapse;width:100%}
 input[type=number]{-moz-appearance:textfield}
 input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
-th{font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);text-align:left;padding:7px 8px;border-bottom:2px solid var(--verde);white-space:nowrap}
+th{font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;color:#F2F6EF;text-align:center;vertical-align:middle;padding:7px 8px;background:var(--verde-esc);border-bottom:2px solid var(--ambar);border-right:1px solid rgba(255,255,255,.25);white-space:nowrap}
+th:last-child{border-right:none}
+th .tag-sem{color:#A9C4B2}
 td{padding:6px 8px;border-bottom:1px solid var(--linha);font-size:13px}
 td.num,th.num{text-align:right;font-family:'IBM Plex Mono';font-size:12.5px}
+thead th.num{text-align:center}
 tr:hover td{background:#F4F8F2}
 .badge{display:inline-block;font-size:10.5px;font-weight:600;letter-spacing:.4px;padding:2px 8px;border-radius:10px;text-transform:uppercase}
 .b-cam{background:#E4EEE7;color:var(--verde-esc)} .b-bv{background:#E8ECF4;color:var(--azul)}
@@ -167,7 +170,8 @@ tr.linha-clic:hover td{background:#EAF1E7}
   .tabela-calc table{table-layout:auto!important;width:100%!important}
   .tabela-calc th{width:auto!important}
   table{width:100%;table-layout:auto}
-  th{white-space:normal;font-size:8.5px;padding:4px 3px}
+  th{white-space:normal;font-size:8.5px;padding:4px 3px;background:transparent;color:var(--muted);border-bottom:2px solid var(--verde);border-right:none}
+  th .tag-sem{color:var(--muted)}
   td{font-size:9.5px;padding:3px 3px}
   td.num,th.num{font-size:9px}
   .tag-sem{font-size:7.5px}
