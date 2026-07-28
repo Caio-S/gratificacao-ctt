@@ -86,6 +86,8 @@ input[type=number]{font-family:'IBM Plex Mono';width:90px}
 .tabela-calc thead th.num{text-align:center}
 .tabela-calc thead th:last-child{border-right:none}
 .tabela-calc td.col-acoes,.tabela-calc th.col-acoes{white-space:nowrap}
+/* pisca a linha recem-ajustada pra o usuario reencontrar onde estava */
+tr.linha-destaque td{background:#FBF0D5;transition:background .6s ease}
 .modal-ov{position:fixed;inset:0;background:rgba(18,61,39,.55);display:flex;align-items:center;justify-content:center;z-index:50;padding:20px}
 .modal-box{background:var(--paper);border-radius:8px;padding:22px 24px;max-width:640px;width:100%;max-height:85vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,.3)}
 .modal-box.largo{max-width:960px}

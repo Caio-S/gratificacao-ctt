@@ -85,6 +85,30 @@ function renderPreservandoFoco() {
   }
 }
 
+/* render() recria o #main inteiro, o que joga a tabela de calculo de volta pro
+   topo. Aqui a gente guarda onde a pagina estava, roda o render e reposiciona a
+   tabela na linha do colaborador mexido — buscando pela matricula, porque a
+   lista e ordenada por gratificacao e a linha pode ter mudado de lugar depois
+   de um ajuste. */
+function renderMantendoLinha(mat) {
+  const scrollPagina = window.scrollY;
+  const caixaAntes = $('.tabela-calc');
+  const scrollTabela = caixaAntes ? caixaAntes.scrollTop : 0;
+  render();
+  window.scrollTo(0, scrollPagina);
+  const caixa = $('.tabela-calc');
+  if (!caixa) return;
+  caixa.scrollTop = scrollTabela;
+  if (!mat) return;
+  const linha = caixa.querySelector(`tr[data-mat="${CSS.escape(String(mat))}"]`);
+  if (!linha) return;
+  const rLinha = linha.getBoundingClientRect(), rCaixa = caixa.getBoundingClientRect();
+  const fora = rLinha.top < rCaixa.top || rLinha.bottom > rCaixa.bottom;
+  if (fora) caixa.scrollTop += (rLinha.top - rCaixa.top) - (caixa.clientHeight - rLinha.height) / 2;
+  linha.classList.add('linha-destaque');
+  setTimeout(() => linha.classList.remove('linha-destaque'), 2200);
+}
+
 function diasNoPeriodo(inicio, fim) {
   if (!inicio || !fim) return 0;
   const a = new Date(inicio), b = new Date(fim);
@@ -954,7 +978,7 @@ function linhaCalculo(k) {
   const aberto = f.detalheAberto === k.mat;
   const admissao = k.admissao ? brDate(k.admissao) : '—';
   const linhaPrincipal = `
-    <tr class="linha-calc">
+    <tr class="linha-calc" data-mat="${esc(k.mat)}">
       <td class="mono">${esc(k.mat)}</td>
       <td>${state.exibirNomes ? esc(k.nome) : `Colaborador ${esc(k.mat)}`}<div class="tag-sem">${esc(k.funcao || '')}</div></td>
       <td class="tag-sem">${esc(k.departamento || 'Não informado')}</td>
@@ -1156,7 +1180,7 @@ function wireCalculo() {
       e.stopPropagation();
       const mat = btn.dataset.detalhe;
       f.detalheAberto = f.detalheAberto === mat ? null : mat;
-      render();
+      renderMantendoLinha(mat);
     };
   });
   $('#main').querySelectorAll('[data-extrato]').forEach(btn => {
@@ -1170,19 +1194,19 @@ function wireCalculo() {
     btn.onclick = e => {
       e.stopPropagation();
       state.ajusteModalMat = btn.dataset.ajuste;
-      render();
+      renderMantendoLinha(state.ajusteModalMat);
     };
   });
   $('#main').querySelectorAll('[data-faltas]').forEach(btn => {
     btn.onclick = e => {
       e.stopPropagation();
       state.faltasModalMat = btn.dataset.faltas;
-      render();
+      renderMantendoLinha(state.faltasModalMat);
     };
   });
   const ovFaltas = $('#faltasModalOv');
   if (ovFaltas) {
-    const fecharFaltas = () => { state.faltasModalMat = null; render(); };
+    const fecharFaltas = () => { const mat = state.faltasModalMat; state.faltasModalMat = null; renderMantendoLinha(mat); };
     ovFaltas.onclick = fecharFaltas;
     $('#faltasModalBox').onclick = e => e.stopPropagation();
     $('#faltasModalFechar').onclick = fecharFaltas;
@@ -1203,7 +1227,7 @@ function wireCalculo() {
 
   const ov = $('#ajusteModalOv');
   if (ov) {
-    const fechar = () => { state.ajusteModalMat = null; render(); };
+    const fechar = () => { const mat = state.ajusteModalMat; state.ajusteModalMat = null; renderMantendoLinha(mat); };
     ov.onclick = fechar;
     $('#ajusteModalBox').onclick = e => e.stopPropagation();
     $('#ajusteModalFechar').onclick = fechar;
@@ -1221,12 +1245,12 @@ function wireCalculo() {
           await api('/ajustes-pendentes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mat, pct, obs }) });
           state.ajusteModalMat = null;
           showToast('ok', 'Sugestão enviada para aprovação do Gerente e da Diretoria.');
-          render();
+          renderMantendoLinha(mat);
         } else {
           await api(`/ajuste/${encodeURIComponent(mat)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pct, obs }) });
           state.ajusteModalMat = null;
           await carregarCalculo();
-          render();
+          renderMantendoLinha(mat);
           showToast('ok', 'Ajuste salvo.');
         }
       } catch (e) { showToast('erro', e.message); }
@@ -1241,7 +1265,7 @@ function wireCalculo() {
         await api(`/ajuste/${encodeURIComponent(mat)}`, { method: 'DELETE' });
         state.ajusteModalMat = null;
         await carregarCalculo();
-        render();
+        renderMantendoLinha(mat);
         showToast('ok', 'Ajuste removido.');
       } catch (e) { showToast('erro', e.message); }
       finally { setBtnLoading(btn, false); }
