@@ -1104,6 +1104,7 @@ function renderCalculo() {
       <div class="kpi"><div class="rot">Gratificação (R$)</div><div class="val">${numBR(resumo.gratif, 0)}</div><div class="det">prorata base ${diasBase} dias</div></div>
       <div class="kpi"><div class="rot">Meta gratificação (R$)</div><div class="val">${numBR(resumo.teto, 0)}</div><div class="det">soma dos tetos dos ${resumo.n} colaboradores</div></div>
       <div class="kpi"><div class="rot">Atingimento médio</div><div class="val">${numBR(atingMedioPct, 1)}%</div><div class="det">R$ ${numBR(resumo.gratif, 0)} de R$ ${numBR(resumo.teto, 0)} da meta</div></div>
+      <div class="kpi"><div class="rot">Média por colaborador (R$)</div><div class="val">${numBR(resumo.n ? resumo.gratif / resumo.n : 0, 0)}</div><div class="det">meta média R$ ${numBR(resumo.n ? resumo.teto / resumo.n : 0, 0)} por colaborador</div></div>
       <div class="kpi"><div class="rot">Folha salário base (R$)</div><div class="val">${numBR(resumo.sal, 0)}</div><div class="det">soma dos ${resumo.n} colaboradores</div></div>
       <div class="kpi"><div class="rot">Salário + gratificação</div><div class="val">${numBR(resumo.totalReceber, 0)}</div><div class="det">sem HE e DSR</div></div>
     </div>
