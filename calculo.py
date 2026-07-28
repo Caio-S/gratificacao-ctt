@@ -230,14 +230,16 @@ def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, par
             gratif = max(gratif, com_ajuste)
         k["ajusteValor"] = gratif - gratif_sem_ajuste
         k["gratif"] = gratif
-        k["atingPct"] = gratif / k["teto"] if k["teto"] else 0
         k["totalReceber"] = k["sal"] + gratif
         k["kmMed"] = k["kmSoma"] / k["viagens"] if k["viagens"] else 0
         k["diasTrabalhados"] = _dias_trabalhados_periodo(k.get("admissao"), periodo_inicio, periodo_fim, dias_base)
-        # meta prorata: quem foi admitido durante o periodo (ou nao participou
-        # dele inteiro) nao pode ter a meta cheia somada no agregado - senao o
-        # atingimento medio do grupo fica artificialmente baixo.
+        # quem foi admitido durante o periodo nao pode ser cobrado pelo teto
+        # cheio: o teto efetivo e a fracao do teto correspondente aos dias que
+        # ele pegou do periodo, e e contra ele que o % atingido e medido.
+        # k["teto"] continua sendo o teto nominal do nivel - o ajuste manual
+        # segue calculado sobre ele.
         k["tetoEfetivo"] = k["teto"] * (k["diasTrabalhados"] / dias_base if dias_base else 0)
+        k["atingPct"] = gratif / k["tetoEfetivo"] if k["tetoEfetivo"] else 0
         entrada_jornada = jornada.get(k["mat"]) or {}
         todos_dias_jornada = entrada_jornada.get("dias") or []
         k["faltas"] = [

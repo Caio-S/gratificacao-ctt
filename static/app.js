@@ -7,6 +7,9 @@ const numBR = (n, casas = 2) => (Number(n) || 0).toLocaleString('pt-BR', { minim
 const norm = s => String(s ?? '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toUpperCase().trim();
 const brDate = iso => iso ? iso.split('-').reverse().join('/') : '—';
 const dataCurta = d => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+/* teto cobrado do colaborador: prorata dos dias que ele pegou do período (quem
+   trabalhou o período inteiro tem tetoEfetivo igual ao teto nominal do nível) */
+const tetoDe = k => k.tetoEfetivo ?? k.teto;
 
 /* =============== estado =============== */
 const state = {
@@ -180,7 +183,7 @@ function exportarCsvSemanal() {
   const linhas = [cabecalho];
   for (const k of (CALC ? CALC.lista : [])) {
     linhas.push([k.mat, ...(state.exibirNomes ? [k.nome] : []), k.departamento || 'Não informado', k.espec,
-      ...yt.map(s => numBR(k.semanas[String(s.idx)]?.valor || 0)), numBR(k.ton), k.viagens, numBR(k.sal), numBR(k.gratif), numBR(k.teto), numBR(k.atingPct * 100, 1) + '%', numBR(k.totalReceber)]);
+      ...yt.map(s => numBR(k.semanas[String(s.idx)]?.valor || 0)), numBR(k.ton), k.viagens, numBR(k.sal), numBR(k.gratif), numBR(tetoDe(k)), numBR(k.atingPct * 100, 1) + '%', numBR(k.totalReceber)]);
   }
   const csv = linhas.map(l => l.map(v => `"${v}"`).join(';')).join('\n');
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
@@ -199,7 +202,7 @@ function renderSemanal() {
   const lista = CALC.lista.filter(k => k.viagens > 0 && (f.departamento === 'TODOS' || (k.departamento || 'Não informado') === f.departamento));
 
   const linhas = lista.map(k => {
-    const metaSemanal = CALC.nSem ? k.teto / CALC.nSem : 0;
+    const metaSemanal = CALC.nSem ? tetoDe(k) / CALC.nSem : 0;
     const pctGratif = k.atingPct * 100;
     return `
       <tr>
@@ -271,7 +274,7 @@ function resumoDiretoria() {
   let somaTeto = 0, abaixo = [], acimaTeto = 0;
   for (const k of lista) {
     tot.n++; tot.ton += k.ton; tot.viagens += k.viagens; tot.gratif += k.gratif; tot.sal += k.sal; tot.totalReceber += k.totalReceber;
-    somaTeto += k.teto || 0;
+    somaTeto += tetoDe(k) || 0;
     for (const s of semanas) {
       const sem = k.semanas[String(s.idx)];
       if (sem) { s.valor += sem.valor; s.ton += sem.ton; }
@@ -279,7 +282,7 @@ function resumoDiretoria() {
     porEspec[k.espec] || (porEspec[k.espec] = { ton: 0, n: 0, gratif: 0, viagens: 0 });
     const pe = porEspec[k.espec];
     pe.ton += k.ton; pe.n++; pe.gratif += k.gratif; pe.viagens += k.viagens;
-    if (k.teto) {
+    if (tetoDe(k)) {
       if (k.atingPct < 0.7) abaixo.push(k);
       if (k.atingPct > 1) acimaTeto++;
     }
@@ -440,7 +443,7 @@ function renderExtrato() {
   }
   const especLabelFull = { CAMINHAO: 'Caminhão canavieiro', 'BATE-VOLTA': 'Caminhão bate e volta', COLHEDORA: 'Colhedora de cana', TRANSBORDO: 'Trator transbordo' }[me.espec] || me.espec;
   const producaoBruta = me['prodR$'];
-  const faltaTeto = Math.max(0, me.teto - me.gratif);
+  const faltaTeto = Math.max(0, tetoDe(me) - me.gratif);
   const semanas = semanasDoPeriodo();
   const maxSemValor = Math.max(1, ...semanas.map(s => (me.semanas[String(s.idx)] || {}).valor || 0));
   let acumulado = 0;
@@ -534,11 +537,12 @@ function renderExtrato() {
           <div class="d">${numBR(producaoBruta)} produzido${me.dias < diasBase ? ` × ${me.dias}/${diasBase} dias` : ''}${PARAMS.aplicarTeto && producaoBruta > me.teto ? ' · travado no teto' : ''}</div>
         </div>
         <div class="bloco">
-          <div class="r">Teto da gratificação — ${brl(me.teto)}</div>
+          <div class="r">Teto da gratificação — ${brl(tetoDe(me))}</div>
           <div class="v" style="color:${me.atingPct >= 1 ? 'var(--ambar)' : 'var(--verde-esc)'}">${numBR(me.atingPct * 100, 1)}%</div>
           <div class="barra" style="height:10px;margin:4px 0 6px"><i class="${me.atingPct > 1 ? 'acima' : ''}" style="width:${Math.min(100, me.atingPct * 100)}%"></i></div>
+          ${me.diasTrabalhados < diasBase ? `<div class="d">Teto prorata: ${me.diasTrabalhados} de ${diasBase} dias-base (admissão em ${brDate(me.admissao)})</div>` : ''}
           ${me.atingPct >= 1
-            ? `<div class="d" style="color:var(--ambar);font-weight:600">Passou do teto em ${brl(me.gratif - me.teto)}</div>`
+            ? `<div class="d" style="color:var(--ambar);font-weight:600">Passou do teto em ${brl(me.gratif - tetoDe(me))}</div>`
             : `<div class="d">Faltam ${brl(faltaTeto)} para 100% do teto</div>`}
         </div>
         <div class="bloco total">
@@ -580,8 +584,8 @@ function renderExtrato() {
                 <td class="num">${s.w ? numBR(s.w.valor) : '—'}</td>
                 <td class="num" style="font-weight:600">${numBR(s.acum)}</td>
                 <td><div style="display:flex;align-items:center;gap:6px">
-                  <div class="barra" style="width:80px"><i class="${s.acum > me.teto ? 'acima' : ''}" style="width:${Math.min(100, (me.teto ? s.acum / me.teto : 0) * 100)}%"></i></div>
-                  <span class="mono" style="font-size:11.5px">${numBR((me.teto ? s.acum / me.teto : 0) * 100, 1)}%</span>
+                  <div class="barra" style="width:80px"><i class="${s.acum > tetoDe(me) ? 'acima' : ''}" style="width:${Math.min(100, (tetoDe(me) ? s.acum / tetoDe(me) : 0) * 100)}%"></i></div>
+                  <span class="mono" style="font-size:11.5px">${numBR((tetoDe(me) ? s.acum / tetoDe(me) : 0) * 100, 1)}%</span>
                 </div></td>
               </tr>`).join('')}
           </tbody>
@@ -968,7 +972,7 @@ function linhaCalculo(k) {
         : '—'}</td>
       <td class="num">${numBR(k.sal)}</td>
       <td class="num" style="font-weight:600;color:var(--verde-esc)">${numBR(k.gratif)}</td>
-      <td class="num">${numBR(k.teto, 0)}</td>
+      <td class="num"${k.diasTrabalhados < DADOS.diasBase ? ` title="Teto prorata: ${k.diasTrabalhados} de ${DADOS.diasBase} dias-base (teto cheio R$ ${numBR(k.teto, 0)})"` : ''}>${numBR(tetoDe(k), 0)}${k.diasTrabalhados < DADOS.diasBase ? '<span class="tag-sem" style="margin-left:3px">pr</span>' : ''}</td>
       <td><div style="display:flex;align-items:center;gap:6px">
         <div class="barra" style="width:80px"><i class="${k.atingPct > 1 ? 'acima' : ''}" style="width:${Math.min(100, k.atingPct * 100)}%"></i></div>
         <span class="mono" style="font-size:11.5px;font-weight:${k.atingPct > 1 ? 700 : 400}${k.atingPct > 1 ? ';color:var(--ambar)' : ''}">${numBR(k.atingPct * 100, 1)}%</span>
@@ -1033,7 +1037,7 @@ function renderAjusteModal() {
           <h3>${sugerir ? 'Sugerir ajuste' : 'Ajuste manual'} — ${esc(k.mat)}</h3>
           <button class="modal-fecha" id="ajusteModalFechar">×</button>
         </div>
-        <div class="dica">Soma pontos percentuais ao % atingido deste colaborador (ex.: produção real não capturada pelo sistema, como viagens particulares). O total nunca ultrapassa 100% do teto por conta deste ajuste. É obrigatório justificar — fica registrado para auditoria e aparece no extrato do colaborador.${sugerir ? ' Sua sugestão precisa ser aprovada por Gerente e Diretoria antes de valer.' : ''}</div>
+        <div class="dica">Soma valor à gratificação deste colaborador, na proporção do teto nominal do nível — R$ ${numBR(k.teto, 0)} (ex.: produção real não capturada pelo sistema, como viagens particulares). O total nunca ultrapassa o teto nominal por conta deste ajuste. É obrigatório justificar — fica registrado para auditoria e aparece no extrato do colaborador.${k.diasTrabalhados < DADOS.diasBase ? ` <b>Atenção:</b> este colaborador pegou só ${k.diasTrabalhados} de ${DADOS.diasBase} dias-base do período, então o teto cobrado dele é R$ ${numBR(tetoDe(k), 0)} — cada 1% aqui pesa mais no % atingido dele.` : ''}${sugerir ? ' Sua sugestão precisa ser aprovada por Gerente e Diretoria antes de valer.' : ''}</div>
         <div class="campo" style="margin-top:10px;max-width:160px">
           <label>Percentual a somar (%)</label>
           <input type="number" step="0.1" id="ajustePctInput" value="${sugerir ? '' : esc(k.ajustePct ?? '')}" placeholder="ex: 15">
@@ -1087,7 +1091,7 @@ function renderCalculo() {
   const filtrado = calculoFiltrado();
   const departamentos = [...new Set(CALC.lista.map(k => k.departamento || 'Não informado'))].sort();
   const resumo = filtrado.reduce((acc, k) => {
-    acc.n++; acc.ton += k.ton; acc.viagens += k.viagens; acc.gratif += k.gratif; acc.sal += k.sal; acc.totalReceber += k.totalReceber; acc.teto += k.tetoEfetivo ?? k.teto; acc.ajusteValor += k.ajusteValor || 0;
+    acc.n++; acc.ton += k.ton; acc.viagens += k.viagens; acc.gratif += k.gratif; acc.sal += k.sal; acc.totalReceber += k.totalReceber; acc.teto += tetoDe(k); acc.ajusteValor += k.ajusteValor || 0;
     return acc;
   }, { n: 0, ton: 0, viagens: 0, gratif: 0, sal: 0, totalReceber: 0, teto: 0, ajusteValor: 0 });
   const atingMedioPct = resumo.teto > 0 ? 100 * resumo.gratif / resumo.teto : 0;
@@ -1097,7 +1101,8 @@ function renderCalculo() {
   const especCaminhao = (PARAMS.especialidades || []).find(e => e.chave === 'CAMINHAO') || {};
   const criterio = `Caminhão/Bate-volta: peso (t) × R$/t da faixa de km da viagem · teto R$ ${numBR(especCaminhao.valorProd || 0, 0)} · prorata ${diasBase} dias-base. `
     + `Colhedora: meta ${numBR(PARAMS.tetoColhedora.metaDia, 0)} t/dia × ${diasBase} dias-base = ${numBR(PARAMS.tetoColhedora.metaDia * diasBase, 0)} t · gratificação = % da meta × R$ ${numBR(PARAMS.tetoColhedora.valor, 0)}. `
-    + `Transbordo: meta ${numBR(PARAMS.tetoTransbordo.metaDia, 0)} t/dia × ${diasBase} dias-base = ${numBR(PARAMS.tetoTransbordo.metaDia * diasBase, 0)} t · gratificação = % da meta × R$ ${numBR(PARAMS.tetoTransbordo.valor, 0)}.`;
+    + `Transbordo: meta ${numBR(PARAMS.tetoTransbordo.metaDia, 0)} t/dia × ${diasBase} dias-base = ${numBR(PARAMS.tetoTransbordo.metaDia * diasBase, 0)} t · gratificação = % da meta × R$ ${numBR(PARAMS.tetoTransbordo.valor, 0)}. `
+    + `Quem foi admitido durante o período tem o teto prorata aos dias que pegou (marcado com "pr" na coluna Teto) — o % atingido é medido contra esse teto.`;
 
   return `
     <div class="kpis">

@@ -390,7 +390,7 @@ def exportar_calculo_xlsx():
             round(k.get("kmMed") or 0, 0),
             round(k["sal"], 2),
             round(k["gratif"], 2),
-            round(k["teto"], 0),
+            round(k.get("tetoEfetivo", k["teto"]), 0),
             round(k["atingPct"] * 100, 1),
             round(k["ajustePct"], 1) if k.get("ajustePct") else "",
             round(k["totalReceber"], 2),
