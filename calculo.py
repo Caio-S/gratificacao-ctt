@@ -218,6 +218,7 @@ def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, par
         else:
             base = min(M, k["teto"]) if aplicar_teto else M
             gratif = base * (min(k["dias"], dias_base) / dias_base if dias_base else 0)
+        gratif_sem_ajuste = gratif
         ajuste = ajustes.get(k["mat"])
         if ajuste and ajuste.get("pct"):
             k["ajustePct"] = ajuste["pct"]
@@ -227,6 +228,7 @@ def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, par
             # ajuste) continua podendo passar de 100% normalmente.
             com_ajuste = min(gratif + (ajuste["pct"] / 100) * k["teto"], k["teto"])
             gratif = max(gratif, com_ajuste)
+        k["ajusteValor"] = gratif - gratif_sem_ajuste
         k["gratif"] = gratif
         k["atingPct"] = gratif / k["teto"] if k["teto"] else 0
         k["totalReceber"] = k["sal"] + gratif

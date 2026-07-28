@@ -1087,10 +1087,12 @@ function renderCalculo() {
   const filtrado = calculoFiltrado();
   const departamentos = [...new Set(CALC.lista.map(k => k.departamento || 'Não informado'))].sort();
   const resumo = filtrado.reduce((acc, k) => {
-    acc.n++; acc.ton += k.ton; acc.viagens += k.viagens; acc.gratif += k.gratif; acc.sal += k.sal; acc.totalReceber += k.totalReceber; acc.teto += k.teto;
+    acc.n++; acc.ton += k.ton; acc.viagens += k.viagens; acc.gratif += k.gratif; acc.sal += k.sal; acc.totalReceber += k.totalReceber; acc.teto += k.teto; acc.ajusteValor += k.ajusteValor || 0;
     return acc;
-  }, { n: 0, ton: 0, viagens: 0, gratif: 0, sal: 0, totalReceber: 0, teto: 0 });
+  }, { n: 0, ton: 0, viagens: 0, gratif: 0, sal: 0, totalReceber: 0, teto: 0, ajusteValor: 0 });
   const atingMedioPct = resumo.teto > 0 ? 100 * resumo.gratif / resumo.teto : 0;
+  const gratifSemAjuste = resumo.gratif - resumo.ajusteValor;
+  const ajustePctSobreTotal = gratifSemAjuste > 0 ? 100 * resumo.ajusteValor / gratifSemAjuste : 0;
   const diasBase = DADOS.diasBase;
   const especCaminhao = (PARAMS.especialidades || []).find(e => e.chave === 'CAMINHAO') || {};
   const criterio = `Caminhão/Bate-volta: peso (t) × R$/t da faixa de km da viagem · teto R$ ${numBR(especCaminhao.valorProd || 0, 0)} · prorata ${diasBase} dias-base. `
@@ -1105,6 +1107,7 @@ function renderCalculo() {
       <div class="kpi"><div class="rot">Meta gratificação (R$)</div><div class="val">${numBR(resumo.teto, 0)}</div><div class="det">soma dos tetos dos ${resumo.n} colaboradores</div></div>
       <div class="kpi"><div class="rot">Atingimento médio</div><div class="val">${numBR(atingMedioPct, 1)}%</div><div class="det">R$ ${numBR(resumo.gratif, 0)} de R$ ${numBR(resumo.teto, 0)} da meta</div></div>
       <div class="kpi"><div class="rot">Média por colaborador (R$)</div><div class="val">${numBR(resumo.n ? resumo.gratif / resumo.n : 0, 0)}</div><div class="det">meta média R$ ${numBR(resumo.n ? resumo.teto / resumo.n : 0, 0)} por colaborador</div></div>
+      ${resumo.ajusteValor ? `<div class="kpi" style="border-top-color:var(--azul)"><div class="rot">Ajustes manuais (R$)</div><div class="val" style="color:var(--azul)">+${numBR(resumo.ajusteValor, 0)}</div><div class="det">+${numBR(ajustePctSobreTotal, 1)}% sobre a gratificação sem ajustes</div></div>` : ''}
       <div class="kpi"><div class="rot">Folha salário base (R$)</div><div class="val">${numBR(resumo.sal, 0)}</div><div class="det">soma dos ${resumo.n} colaboradores</div></div>
       <div class="kpi"><div class="rot">Salário + gratificação</div><div class="val">${numBR(resumo.totalReceber, 0)}</div><div class="det">sem HE e DSR</div></div>
     </div>
