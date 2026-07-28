@@ -82,6 +82,12 @@ def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, par
     jornada = jornada or {}
     periodo_inicio_iso = periodo_inicio.isoformat() if periodo_inicio else None
     periodo_fim_iso = periodo_fim.isoformat() if periodo_fim else None
+    # a jornada guardada so vale se foi buscada pra este MESMO periodo de
+    # apuracao (guarda so a contagem de dias, nao a lista - se o periodo
+    # mudou sem re-buscar, os dados antigos nao servem pra esse recalculo).
+    jornada_por_mat = jornada.get("porMat", {}) if (
+        jornada.get("periodoInicio") == periodo_inicio_iso and jornada.get("periodoFim") == periodo_fim_iso
+    ) else {}
     parametros = dict(parametros)
     parametros["_diasBase"] = dias_base
     especialidades = parametros["especialidades"]
@@ -240,24 +246,17 @@ def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, par
         # segue calculado sobre ele.
         k["tetoEfetivo"] = k["teto"] * (k["diasTrabalhados"] / dias_base if dias_base else 0)
         k["atingPct"] = gratif / k["tetoEfetivo"] if k["tetoEfetivo"] else 0
-        entrada_jornada = jornada.get(k["mat"]) or {}
-        todos_dias_jornada = entrada_jornada.get("dias") or []
-        k["faltas"] = [
-            r for r in (entrada_jornada.get("faltas") or [])
-            if periodo_inicio_iso is None or (periodo_inicio_iso <= r["data"] <= periodo_fim_iso)
-        ]
+        entrada_jornada = jornada_por_mat.get(k["mat"]) or {}
+        k["faltas"] = entrada_jornada.get("faltas") or []
         # dias trabalhados de verdade: conta os dias que de fato aparecem na
-        # planilha de jornada dentro do periodo (nao um "dias-base" fixo) menos
-        # os dias sem expediente (D.S.R., feriado, ferias, atestado...). So
-        # exibicao, nao entra na formula da gratificacao. Sem jornada
-        # importada pra essa matricula, cai de volta pro dias esperados
-        # (admissao/dias-base) menos as faltas, igual antes.
-        if todos_dias_jornada:
-            dias_planilha_periodo = sum(
-                1 for d in todos_dias_jornada
-                if periodo_inicio_iso is None or (periodo_inicio_iso <= d <= periodo_fim_iso)
-            )
-            k["diasTrabalhadosReal"] = max(0, dias_planilha_periodo - len(k["faltas"]))
+        # planilha de jornada (nao um "dias-base" fixo) menos os dias sem
+        # expediente (D.S.R., feriado, ferias, atestado...). So exibicao, nao
+        # entra na formula da gratificacao. Sem jornada pra essa matricula (ou
+        # jornada de um periodo diferente do atual), cai de volta pro dias
+        # esperados (admissao/dias-base) menos as faltas, igual antes.
+        total_dias_jornada = entrada_jornada.get("totalDias")
+        if total_dias_jornada:
+            k["diasTrabalhadosReal"] = max(0, total_dias_jornada - len(k["faltas"]))
         else:
             k["diasTrabalhadosReal"] = max(0, k["diasTrabalhados"] - len(k["faltas"]))
         resultado.append(k)

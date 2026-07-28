@@ -30,54 +30,6 @@ def _linha(matriz, idx, col):
     return row[col] if col < len(row) else ""
 
 
-def parse_funcionarios(matriz, dias_base):
-    """Mk: planilha de funcionarios/motoristas operacionais."""
-    idx_cabecalho = next(
-        (i for i, linha in enumerate(matriz) if achar_coluna(linha, ["MATRICULA", "COD-FUNC", "CÓD-FUNC", "MAT"]) >= 0),
-        -1,
-    )
-    if idx_cabecalho < 0:
-        raise ErroImportacao("Cabeçalho não encontrado (precisa de coluna matricula / Cód-Func).")
-
-    cab = matriz[idx_cabecalho]
-    c_mat = achar_coluna(cab, ["MATRICULA", "COD-FUNC", "MAT"])
-    c_nome = achar_coluna(cab, ["NOME DO FUNCIONARIO", "NOME COLABORADOR", "NOME"])
-    c_funcao = achar_coluna(cab, ["DESC_FUNCAO", "FUNCAO", "FUNÇÃO"])
-    c_espec = achar_coluna(cab, ["ESPECIALIDADE", "DES-ESPECIALID", "EQUIPAMENTO", "ESPEC"])
-    c_dias = achar_coluna(cab, ["QTDE-DIAS-TRAB", "DIAS TRABALHADOS", "DIAS"])
-    c_sal = achar_coluna(cab, ["SALARIO-MENSAL", "SAL_BASE", "SALARIO BASE", "SALARIO"])
-    c_ativo = achar_coluna(cab, ["ATIVO", "SITUACAO"])
-    c_depto = achar_coluna(cab, ["AGRUP_DEPARTAMENTO3", "DEPARTAMENTO", "AGRUP_DEPARTAMENTO", "SETOR"])
-    c_admissao = achar_coluna(cab, ["DATA_ADMISSAO", "DT-ADMISSAO", "DATA ADMISSAO", "ADMISSAO"])
-
-    resultado = []
-    for i in range(idx_cabecalho + 1, len(matriz)):
-        mat = str(_linha(matriz, i, c_mat) or "").strip()
-        if not valor_valido(mat):
-            continue
-        funcao = str(_linha(matriz, i, c_funcao)).strip() if c_funcao >= 0 else ""
-        if c_ativo >= 0:
-            situacao = normalizar(_linha(matriz, i, c_ativo))
-            if situacao and situacao not in ("1", "ATIVO", "SIM"):
-                continue
-        # inclui a linha, A NAO SER que exista coluna funcao com texto que nao bate no padrao operacional
-        if c_funcao >= 0 and funcao and not RE_FUNCAO_OPERACIONAL.search(normalizar(funcao)):
-            continue
-        depto = str(_linha(matriz, i, c_depto) or "").strip() if c_depto >= 0 else ""
-        dias_planilha = parse_numero(_linha(matriz, i, c_dias)) if c_dias >= 0 else 0
-        resultado.append({
-            "mat": mat,
-            "nome": str(_linha(matriz, i, c_nome)).strip() if c_nome >= 0 else "",
-            "funcao": funcao,
-            "espec": classificar_especialidade(_linha(matriz, i, c_espec) if c_espec >= 0 else funcao),
-            "dias": min(dias_base, dias_planilha or dias_base) if c_dias >= 0 else dias_base,
-            "sal": parse_numero(_linha(matriz, i, c_sal)) if c_sal >= 0 else 0,
-            "departamento": depto or "Não informado",
-            "admissao": parse_data(_linha(matriz, i, c_admissao)) if c_admissao >= 0 else None,
-        })
-    return resultado
-
-
 def parse_funcionarios_mariadb(colunas, linhas, dias_base):
     """Mk (variante MariaDB): funcionarios direto da vw_funcionarios_ativos_atual.
     Mesma classificacao/filtro de funcao operacional do parse_funcionarios

@@ -196,8 +196,18 @@ def _processar_jornada_async(periodo_inicio, periodo_fim):
     try:
         colunas, linhas = mariadb_client.buscar_jornada(periodo_inicio, periodo_fim)
         mapa = parsers.parse_jornada(itertools.chain([colunas], linhas))
-        data_store.set_jornada(mapa)
-        total_registros = sum(len(v.get("faltas", [])) for v in mapa.values())
+        # guarda so a CONTAGEM de dias por matricula (nao a lista inteira de
+        # datas - isso e' 100k+ strings sem necessidade) junto com o periodo
+        # em que foi buscado; calculo.py so usa esse dado se o periodo bater
+        # com o periodo de apuracao atual, senao ignora (mais seguro do que
+        # filtrar datas de um periodo antigo contra um periodo novo).
+        compacto = {
+            "periodoInicio": periodo_inicio,
+            "periodoFim": periodo_fim,
+            "porMat": {mat: {"totalDias": len(v["dias"]), "faltas": v["faltas"]} for mat, v in mapa.items()},
+        }
+        data_store.set_jornada(compacto)
+        total_registros = sum(len(v["faltas"]) for v in compacto["porMat"].values())
         data_store.set_jornada_import_status({
             "status": "concluido", "totalMatriculas": len(mapa), "totalRegistros": total_registros,
             "periodoInicio": periodo_inicio, "periodoFim": periodo_fim,
@@ -251,6 +261,7 @@ def get_dados():
         "periodo": d["periodo"],
         "diasBase": d["dias_base"],
         "jornadaResumo": d["jornada_resumo"],
+        "funcionariosAtualizadoEm": d["funcionarios_atualizado_em"],
     })
 
 

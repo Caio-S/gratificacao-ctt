@@ -80,6 +80,20 @@ def _get_many(chaves_com_padroes):
         pool.putconn(conn)
 
 
+def get_atualizados_em(chaves):
+    """updated_at (ISO) de cada chave informada - usado pra mostrar 'atualizado
+    ha X' na aba Dados pros dados que vem ao vivo do MariaDB."""
+    pool = _obter_pool()
+    conn = pool.getconn()
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute("SELECT key, updated_at FROM ctt_app_state WHERE key = ANY(%s)", (list(chaves),))
+            encontrados = dict(cur.fetchall())
+        return {k: (encontrados[k].isoformat() if encontrados.get(k) else None) for k in chaves}
+    finally:
+        pool.putconn(conn)
+
+
 def get_dados_bundle():
     """Tudo que a rota /api/dados precisa, numa unica ida ao banco."""
     valores = _get_many({
@@ -93,15 +107,19 @@ def get_dados_bundle():
     for p in pesagens:
         p["data"] = _texto_para_data(p.get("data"))
     jornada = valores["jornada"]
+    porMat = jornada.get("porMat", jornada)  # compat com o formato antigo {mat: {...}}
+    atualizados = get_atualizados_em(["jornada", "funcionarios"])
     return {
         "funcionarios": funcionarios,
         "pesagens": pesagens,
         "frotas": valores["frotas"],
         "periodo": valores["periodo"],
         "dias_base": valores["dias_base"],
+        "funcionarios_atualizado_em": atualizados.get("funcionarios"),
         "jornada_resumo": {
-            "matriculas": len(jornada),
-            "registros": sum(len(v.get("faltas", [])) for v in jornada.values()),
+            "matriculas": len(porMat),
+            "registros": sum(len(v.get("faltas", [])) for v in porMat.values()),
+            "atualizadoEm": atualizados.get("jornada"),
         },
     }
 
