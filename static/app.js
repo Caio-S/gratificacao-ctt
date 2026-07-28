@@ -10,6 +10,9 @@ const dataCurta = d => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMo
 /* teto cobrado do colaborador: prorata dos dias que ele pegou do período (quem
    trabalhou o período inteiro tem tetoEfetivo igual ao teto nominal do nível) */
 const tetoDe = k => k.tetoEfetivo ?? k.teto;
+/* true quando o colaborador nao pegou o periodo inteiro (admitido no meio) e
+   por isso responde por uma fracao do teto do nivel */
+const tetoParcial = k => tetoDe(k) < k.teto;
 function tempoRelativo(iso) {
   if (!iso) return null;
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -575,7 +578,7 @@ function renderExtrato() {
           <div class="r">Teto da gratificação — ${brl(tetoDe(me))}</div>
           <div class="v" style="color:${me.atingPct >= 1 ? 'var(--ambar)' : 'var(--verde-esc)'}">${numBR(me.atingPct * 100, 1)}%</div>
           <div class="barra" style="height:10px;margin:4px 0 6px"><i class="${me.atingPct > 1 ? 'acima' : ''}" style="width:${Math.min(100, me.atingPct * 100)}%"></i></div>
-          ${me.diasTrabalhados < diasBase ? `<div class="d">Teto prorata: ${me.diasTrabalhados} de ${diasBase} dias-base (admissão em ${brDate(me.admissao)})</div>` : ''}
+          ${tetoParcial(me) ? `<div class="d">Teto prorata: ${me.diasPeriodo} de ${diasNoPeriodo(DADOS.periodo.inicio, DADOS.periodo.fim)} dias do período (admissão em ${brDate(me.admissao)}) · teto cheio ${brl(me.teto)}</div>` : ''}
           ${me.atingPct >= 1
             ? `<div class="d" style="color:var(--ambar);font-weight:600">Passou do teto em ${brl(me.gratif - tetoDe(me))}</div>`
             : `<div class="d">Faltam ${brl(faltaTeto)} para 100% do teto</div>`}
@@ -1007,7 +1010,7 @@ function linhaCalculo(k) {
         : '—'}</td>
       <td class="num">${numBR(k.sal)}</td>
       <td class="num" style="font-weight:600;color:var(--verde-esc)">${numBR(k.gratif)}</td>
-      <td class="num"${k.diasTrabalhados < DADOS.diasBase ? ` title="Teto prorata: ${k.diasTrabalhados} de ${DADOS.diasBase} dias-base (teto cheio R$ ${numBR(k.teto, 0)})"` : ''}>${numBR(tetoDe(k), 0)}${k.diasTrabalhados < DADOS.diasBase ? '<span class="tag-sem" style="margin-left:3px">pr</span>' : ''}</td>
+      <td class="num"${tetoParcial(k) ? ` title="Teto prorata: ${k.diasPeriodo} de ${diasNoPeriodo(DADOS.periodo.inicio, DADOS.periodo.fim)} dias do período (teto cheio R$ ${numBR(k.teto, 0)})"` : ''}>${numBR(tetoDe(k), 0)}${tetoParcial(k) ? '<span class="tag-sem" style="margin-left:3px">pr</span>' : ''}</td>
       <td><div style="display:flex;align-items:center;gap:6px">
         <div class="barra" style="width:80px"><i class="${k.atingPct > 1 ? 'acima' : ''}" style="width:${Math.min(100, k.atingPct * 100)}%"></i></div>
         <span class="mono" style="font-size:11.5px;font-weight:${k.atingPct > 1 ? 700 : 400}${k.atingPct > 1 ? ';color:var(--ambar)' : ''}">${numBR(k.atingPct * 100, 1)}%</span>
@@ -1072,7 +1075,7 @@ function renderAjusteModal() {
           <h3>${sugerir ? 'Sugerir ajuste' : 'Ajuste manual'} — ${esc(k.mat)}</h3>
           <button class="modal-fecha" id="ajusteModalFechar">×</button>
         </div>
-        <div class="dica">Soma valor à gratificação deste colaborador, na proporção do teto nominal do nível — R$ ${numBR(k.teto, 0)} (ex.: produção real não capturada pelo sistema, como viagens particulares). O total nunca ultrapassa o teto nominal por conta deste ajuste. É obrigatório justificar — fica registrado para auditoria e aparece no extrato do colaborador.${k.diasTrabalhados < DADOS.diasBase ? ` <b>Atenção:</b> este colaborador pegou só ${k.diasTrabalhados} de ${DADOS.diasBase} dias-base do período, então o teto cobrado dele é R$ ${numBR(tetoDe(k), 0)} — cada 1% aqui pesa mais no % atingido dele.` : ''}${sugerir ? ' Sua sugestão precisa ser aprovada por Gerente e Diretoria antes de valer.' : ''}</div>
+        <div class="dica">Soma valor à gratificação deste colaborador, na proporção do teto nominal do nível — R$ ${numBR(k.teto, 0)} (ex.: produção real não capturada pelo sistema, como viagens particulares). O total nunca ultrapassa o teto nominal por conta deste ajuste. É obrigatório justificar — fica registrado para auditoria e aparece no extrato do colaborador.${tetoParcial(k) ? ` <b>Atenção:</b> este colaborador pegou só ${k.diasPeriodo} de ${diasNoPeriodo(DADOS.periodo.inicio, DADOS.periodo.fim)} dias do período, então o teto cobrado dele é R$ ${numBR(tetoDe(k), 0)} — cada 1% aqui pesa mais no % atingido dele.` : ''}${sugerir ? ' Sua sugestão precisa ser aprovada por Gerente e Diretoria antes de valer.' : ''}</div>
         <div class="campo" style="margin-top:10px;max-width:160px">
           <label>Percentual a somar (%)</label>
           <input type="number" step="0.1" id="ajustePctInput" value="${sugerir ? '' : esc(k.ajustePct ?? '')}" placeholder="ex: 15">
@@ -1137,7 +1140,7 @@ function renderCalculo() {
   const criterio = `Caminhão/Bate-volta: peso (t) × R$/t da faixa de km da viagem · teto R$ ${numBR(especCaminhao.valorProd || 0, 0)} · prorata ${diasBase} dias-base. `
     + `Colhedora: meta ${numBR(PARAMS.tetoColhedora.metaDia, 0)} t/dia × ${diasBase} dias-base = ${numBR(PARAMS.tetoColhedora.metaDia * diasBase, 0)} t · gratificação = % da meta × R$ ${numBR(PARAMS.tetoColhedora.valor, 0)}. `
     + `Transbordo: meta ${numBR(PARAMS.tetoTransbordo.metaDia, 0)} t/dia × ${diasBase} dias-base = ${numBR(PARAMS.tetoTransbordo.metaDia * diasBase, 0)} t · gratificação = % da meta × R$ ${numBR(PARAMS.tetoTransbordo.valor, 0)}. `
-    + `Quem foi admitido durante o período tem o teto prorata aos dias que pegou (marcado com "pr" na coluna Teto) — o % atingido é medido contra esse teto.`;
+    + `Quem foi admitido durante o período tem o teto prorata aos dias corridos que pegou — teto do nível ÷ ${diasNoPeriodo(DADOS.periodo.inicio, DADOS.periodo.fim)} dias do período × dias do colaborador (marcado com "pr" na coluna Teto) — e o % atingido é medido contra esse teto.`;
 
   return `
     <div class="kpis">

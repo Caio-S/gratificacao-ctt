@@ -60,6 +60,22 @@ def _dias_trabalhados_periodo(admissao, periodo_inicio, periodo_fim, dias_base):
     return min(dias_base, (periodo_fim - inicio_efetivo).days + 1)
 
 
+def _dias_corridos_no_periodo(admissao, periodo_inicio, periodo_fim):
+    """Dias CORRIDOS do periodo de apuracao que o colaborador pegou: da data de
+    admissao (ou do inicio do periodo, se admitido antes) ate o fim do periodo.
+
+    Diferente de _dias_trabalhados_periodo, aqui nao entra o teto de dias-base:
+    a meta parcial e uma fracao do calendario do periodo (ex.: 14 de 30 dias),
+    e nao dos dias-base (25), que servem pra outros criterios do calculo."""
+    if not periodo_inicio or not periodo_fim:
+        return 0
+    if not admissao or admissao <= periodo_inicio:
+        return (periodo_fim - periodo_inicio).days + 1
+    if admissao > periodo_fim:
+        return 0
+    return (periodo_fim - admissao).days + 1
+
+
 def _novo_agregado(base):
     return {
         **base,
@@ -82,6 +98,8 @@ def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, par
     jornada = jornada or {}
     periodo_inicio_iso = periodo_inicio.isoformat() if periodo_inicio else None
     periodo_fim_iso = periodo_fim.isoformat() if periodo_fim else None
+    # dias corridos do periodo (ex.: 16/06 a 15/07 = 30) - base da meta parcial
+    dias_corridos_periodo = (periodo_fim - periodo_inicio).days + 1 if periodo_inicio and periodo_fim else 0
     # a jornada guardada so vale se foi buscada pra este MESMO periodo de
     # apuracao (guarda so a contagem de dias, nao a lista - se o periodo
     # mudou sem re-buscar, os dados antigos nao servem pra esse recalculo).
@@ -240,11 +258,12 @@ def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, par
         k["kmMed"] = k["kmSoma"] / k["viagens"] if k["viagens"] else 0
         k["diasTrabalhados"] = _dias_trabalhados_periodo(k.get("admissao"), periodo_inicio, periodo_fim, dias_base)
         # quem foi admitido durante o periodo nao pode ser cobrado pelo teto
-        # cheio: o teto efetivo e a fracao do teto correspondente aos dias que
-        # ele pegou do periodo, e e contra ele que o % atingido e medido.
-        # k["teto"] continua sendo o teto nominal do nivel - o ajuste manual
-        # segue calculado sobre ele.
-        k["tetoEfetivo"] = k["teto"] * (k["diasTrabalhados"] / dias_base if dias_base else 0)
+        # cheio: o teto efetivo e a fracao do teto correspondente aos dias
+        # CORRIDOS do periodo que ele pegou (ex.: 1275 / 30 x 14 = 595), e e
+        # contra ele que o % atingido e medido. k["teto"] continua sendo o teto
+        # nominal do nivel - o ajuste manual segue calculado sobre ele.
+        k["diasPeriodo"] = _dias_corridos_no_periodo(k.get("admissao"), periodo_inicio, periodo_fim)
+        k["tetoEfetivo"] = k["teto"] * (k["diasPeriodo"] / dias_corridos_periodo) if dias_corridos_periodo else k["teto"]
         k["atingPct"] = gratif / k["tetoEfetivo"] if k["tetoEfetivo"] else 0
         entrada_jornada = jornada_por_mat.get(k["mat"]) or {}
         k["faltas"] = entrada_jornada.get("faltas") or []
