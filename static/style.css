@@ -86,6 +86,11 @@ input[type=number]{font-family:'IBM Plex Mono';width:90px}
 .tabela-calc thead th.num{text-align:center}
 .tabela-calc thead th:last-child{border-right:none}
 .tabela-calc td.col-acoes,.tabela-calc th.col-acoes{white-space:nowrap}
+/* colaboradores fixados na busca da tela de calculo */
+.busca-fixos{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px}
+.chip-busca{display:inline-flex;align-items:center;gap:5px;background:#E4EEE7;color:var(--verde-esc);border:1px solid #BFDCC8;border-radius:12px;padding:2px 4px 2px 10px;font-size:12px;font-weight:600}
+.chip-busca button{background:none;border:none;color:var(--verde-esc);font-size:15px;line-height:1;cursor:pointer;padding:0 5px;border-radius:50%}
+.chip-busca button:hover{background:rgba(18,61,39,.14)}
 /* pisca a linha recem-ajustada pra o usuario reencontrar onde estava: pinta na
    hora e vai apagando (transition faria o contrario - aparecer devagar) */
 tr.linha-destaque td{animation:destaqueLinha 2.2s ease-out}

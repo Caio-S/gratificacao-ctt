@@ -36,7 +36,10 @@ const state = {
   /* cada aba com filtro proprio tem seu objeto isolado — nao ha estado de
      filtro global compartilhado entre abas (evita o painel da diretoria, ou
      qualquer outra aba, herdar o filtro aplicado em outra) */
-  filtroCalculo: { busca: '', apenasComProducao: true, especialidade: 'TODOS', departamento: 'TODOS', detalheAberto: null },
+  /* buscasFixadas: colaboradores "presos" no filtro (Enter na busca) — a busca
+     que esta sendo digitada soma com eles, entao da pra ir juntando gente sem
+     perder quem ja estava filtrado */
+  filtroCalculo: { busca: '', buscasFixadas: [], apenasComProducao: true, especialidade: 'TODOS', departamento: 'TODOS', detalheAberto: null },
   filtroSemanal: { semana: 'TODAS', departamento: 'TODOS' },
   filtroDiretoria: { especialidade: 'TODOS', departamento: 'TODOS' },
   filtroAprovacoes: { busca: '', especialidade: 'TODOS', departamento: 'TODOS', soComAjuste: false },
@@ -975,14 +978,22 @@ function badgeEspec(espec) {
   return `<span class="badge ${ESPEC_BADGE[espec] || 'b-cam'}">${ESPEC_LABEL[espec] || esc(espec)}</span>`;
 }
 
+/* termos ativos da busca: os fixados + o que esta sendo digitado agora */
+function termosBuscaCalculo() {
+  const f = state.filtroCalculo;
+  return [...(f.buscasFixadas || []), f.busca].map(t => String(t || '').trim()).filter(Boolean);
+}
+const casaComTermo = (k, t) => norm(k.nome).includes(norm(t)) || String(k.mat).includes(t);
+
 function calculoFiltrado() {
   const f = state.filtroCalculo;
   const lista = CALC ? CALC.lista : [];
+  const termos = termosBuscaCalculo();
   return lista.filter(k =>
     (!f.apenasComProducao || k.viagens > 0) &&
     (f.especialidade === 'TODOS' || k.espec === f.especialidade) &&
     (f.departamento === 'TODOS' || (k.departamento || 'Não informado') === f.departamento) &&
-    (!f.busca || norm(k.nome).includes(norm(f.busca)) || String(k.mat).includes(f.busca))
+    (!termos.length || termos.some(t => casaComTermo(k, t)))
   );
 }
 
@@ -1158,7 +1169,7 @@ function renderCalculo() {
       <div class="linha-form" style="justify-content:space-between">
         <h2 style="margin:0">Cálculo por colaborador</h2>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <input id="calcBusca" placeholder="Buscar nome ou matrícula…" value="${esc(f.busca)}" style="width:220px">
+          <input id="calcBusca" placeholder="Buscar nome ou matrícula…" title="Digite e tecle Enter para fixar o colaborador no filtro e continuar buscando outros" value="${esc(f.busca)}" style="width:220px">
           <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;white-space:nowrap">
             <input type="checkbox" id="calcSoProducao" ${f.apenasComProducao ? 'checked' : ''}> Só com produção
           </label>
@@ -1177,8 +1188,14 @@ function renderCalculo() {
           <button class="btn no-print" id="btnExportarCalculoPdf">Exportar PDF</button>
         </div>
       </div>
+      ${(f.buscasFixadas || []).length ? `
+        <div class="busca-fixos">
+          <span class="tag-sem">Colaboradores no filtro:</span>
+          ${f.buscasFixadas.map((t, i) => `<span class="chip-busca">${esc(t)}<button type="button" data-tirarbusca="${i}" title="Tirar do filtro">×</button></span>`).join('')}
+          <button type="button" class="btn peq sec" id="limparBuscas">Limpar seleção</button>
+        </div>` : `<div class="dica" style="margin-top:6px">Dica: tecle <b>Enter</b> na busca para fixar um colaborador e ir somando outros ao filtro.</div>`}
       <div class="dica" style="margin-top:6px">${esc(criterio)}</div>
-      ${filtrado.length ? tabelaCalculo(filtrado) : '<div style="text-align:center;padding:24px;color:var(--muted)">Sem dados — importe as bases ou carregue a demonstração na aba Dados.</div>'}
+      ${filtrado.length ? tabelaCalculo(filtrado) : '<div style="text-align:center;padding:24px;color:var(--muted)">Nenhum colaborador encontrado com esses filtros.</div>'}
     </div>
     ${renderAjusteModal()}
     ${renderFaltasModal()}`;
@@ -1186,6 +1203,21 @@ function renderCalculo() {
 function wireCalculo() {
   const f = state.filtroCalculo;
   $('#calcBusca').oninput = e => { f.busca = e.target.value; renderPreservandoFoco(); };
+  $('#calcBusca').onkeydown = e => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const termo = (f.busca || '').trim();
+    if (!termo) return;
+    f.buscasFixadas = f.buscasFixadas || [];
+    if (!f.buscasFixadas.some(t => norm(t) === norm(termo))) f.buscasFixadas.push(termo);
+    f.busca = '';
+    renderPreservandoFoco();
+  };
+  $('#main').querySelectorAll('[data-tirarbusca]').forEach(btn => {
+    btn.onclick = () => { f.buscasFixadas.splice(+btn.dataset.tirarbusca, 1); render(); };
+  });
+  const btnLimparBuscas = $('#limparBuscas');
+  if (btnLimparBuscas) btnLimparBuscas.onclick = () => { f.buscasFixadas = []; f.busca = ''; render(); };
   $('#calcSoProducao').onchange = e => { f.apenasComProducao = e.target.checked; render(); };
   $('#calcEspec').onchange = e => { f.especialidade = e.target.value; render(); };
   $('#calcDepto').onchange = e => { f.departamento = e.target.value; render(); };
@@ -1230,12 +1262,13 @@ function wireCalculo() {
   const btnXlsx = $('#btnExportarCalculoXlsx');
   if (btnXlsx) btnXlsx.onclick = () => {
     const params = new URLSearchParams({
-      busca: f.busca,
       apenasComProducao: f.apenasComProducao ? '1' : '0',
       especialidade: f.especialidade,
       departamento: f.departamento,
       nomes: state.exibirNomes ? '1' : '0',
     });
+    // um "busca" por termo — o Excel sai igual ao que esta na tela
+    for (const t of termosBuscaCalculo()) params.append('busca', t);
     window.open('/api/calculo/exportar?' + params.toString(), '_blank');
   };
 

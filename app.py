@@ -364,7 +364,9 @@ def exportar_calculo_xlsx():
     if resultado is None:
         return jsonify({"error": "Período inválido."}), 400
 
-    busca = normalizar(request.args.get("busca", ""))
+    # a tela permite fixar varios colaboradores no filtro, entao vem um "busca"
+    # por termo; a linha entra se casar com qualquer um deles
+    buscas = [normalizar(b) for b in request.args.getlist("busca") if b.strip()]
     apenas_com_producao = request.args.get("apenasComProducao", "1") != "0"
     especialidade = request.args.get("especialidade", "TODOS")
     departamento = request.args.get("departamento", "TODOS")
@@ -375,7 +377,7 @@ def exportar_calculo_xlsx():
         if (not apenas_com_producao or k["viagens"] > 0)
         and (especialidade == "TODOS" or k["espec"] == especialidade)
         and (departamento == "TODOS" or (k.get("departamento") or "Não informado") == departamento)
-        and (not busca or busca in normalizar(k.get("nome")) or busca in str(k["mat"]))
+        and (not buscas or any(b in normalizar(k.get("nome")) or b in str(k["mat"]) for b in buscas))
     ]
 
     wb = openpyxl.Workbook()
