@@ -10,6 +10,17 @@ const dataCurta = d => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMo
 /* teto cobrado do colaborador: prorata dos dias que ele pegou do período (quem
    trabalhou o período inteiro tem tetoEfetivo igual ao teto nominal do nível) */
 const tetoDe = k => k.tetoEfetivo ?? k.teto;
+function tempoRelativo(iso) {
+  if (!iso) return null;
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const min = Math.round(diffMs / 60000);
+  if (min < 1) return 'agora mesmo';
+  if (min < 60) return `há ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `há ${h}h`;
+  const d = Math.round(h / 24);
+  return `há ${d} dia${d > 1 ? 's' : ''}`;
+}
 
 /* =============== estado =============== */
 const state = {
@@ -1536,6 +1547,7 @@ function renderDados() {
         <h2>Funcionários / motoristas</h2>
         <div class="dica">Busca direto do sistema da empresa (mesma base do RH) — matrícula, nome, função, departamento e admissão dos colaboradores ativos. Sem upload de planilha: é só clicar pra atualizar.</div>
         <button class="btn sec" id="btnAtualizarFuncionarios">Atualizar funcionários</button>
+        ${d.funcionariosAtualizadoEm ? `<div class="tag-sem" style="margin-top:8px">Atualizado ${tempoRelativo(d.funcionariosAtualizadoEm)}</div>` : ''}
       </div>
       <div class="cartao">
         <h2>Disponibilidade de frotas</h2>
@@ -1558,7 +1570,7 @@ function renderDados() {
       <h2>Jornada / escala</h2>
       <div class="dica">Busca a escala direto do sistema da empresa (mesma base do RH) pro período de apuração atual — usado pra mostrar, no Cálculo, os dias sem expediente (D.S.R., feriado, férias, atestado, compensado) de cada colaborador. Sem upload de planilha: é só clicar pra atualizar.</div>
       <button class="btn sec" id="btnAtualizarJornada">Atualizar jornada</button>
-      ${d.jornadaResumo && d.jornadaResumo.registros ? `<div class="tag-sem" style="margin-top:8px">Carregado: ${d.jornadaResumo.registros} dias sem expediente em ${d.jornadaResumo.matriculas} matrículas.</div>` : ''}
+      ${d.jornadaResumo && d.jornadaResumo.registros ? `<div class="tag-sem" style="margin-top:8px">Carregado: ${d.jornadaResumo.registros} dias sem expediente em ${d.jornadaResumo.matriculas} matrículas${d.jornadaResumo.atualizadoEm ? ` · atualizado ${tempoRelativo(d.jornadaResumo.atualizadoEm)}` : ''}.</div>` : ''}
     </div>` : '';
 
   const acoesResumo = podeImportar() ? `
