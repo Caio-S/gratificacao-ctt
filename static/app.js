@@ -42,7 +42,9 @@ const state = {
   filtroCalculo: { busca: '', buscasFixadas: [], apenasComProducao: true, especialidade: 'TODOS', departamento: 'TODOS', detalheAberto: null },
   filtroSemanal: { semana: 'TODAS', departamento: 'TODOS' },
   filtroDiretoria: { especialidade: 'TODOS', departamento: 'TODOS' },
-  filtroAprovacoes: { busca: '', especialidade: 'TODOS', departamento: 'TODOS', soComAjuste: false },
+  /* soComValor liga por padrao: a aprovacao so faz sentido pra quem tem valor
+     a pagar — sem isso a lista vem com centenas de linhas zeradas */
+  filtroAprovacoes: { busca: '', especialidade: 'TODOS', departamento: 'TODOS', soComAjuste: false, soComValor: true },
   extratoRelatorioModalAberto: false,
   extratoRelatorioIntervalo: null,
   faltasModalMat: null,
@@ -1380,6 +1382,11 @@ function wireCalculo() {
 }
 
 /* =============== aba: aprovacoes =============== */
+/* tem algo pra ser aprovado: valor a pagar vindo de producao registrada ou de
+   ajuste manual (o ajuste existe justamente pra producao que o sistema nao
+   capturou, entao esses tambem precisam passar pela aprovacao) */
+const temValorAprovavel = k => k.gratif > 0 && (k.viagens > 0 || !!k.ajustePct);
+
 function gratificacoesFiltradas() {
   const f = state.filtroAprovacoes;
   const meuPapel = USUARIO.papel;
@@ -1388,7 +1395,8 @@ function gratificacoesFiltradas() {
     .filter(k => {
       const info = GRATIF_APROVACOES[k.mat] || {};
       const jaAprovouEu = meuPapel === 'gerente' ? info.aprovadoGerente : info.aprovadoDiretoria;
-      return (!f.soComAjuste || k.ajustePct) &&
+      return (!f.soComValor || temValorAprovavel(k)) &&
+        (!f.soComAjuste || k.ajustePct) &&
         (f.especialidade === 'TODOS' || k.espec === f.especialidade) &&
         (f.departamento === 'TODOS' || (k.departamento || 'Não informado') === f.departamento) &&
         (!f.busca || norm(k.nome).includes(norm(f.busca)) || String(k.mat).includes(f.busca)) &&
@@ -1417,7 +1425,7 @@ function renderGratificacoesAprovacao() {
       <td>${state.exibirNomes ? esc(k.nome) : `Colaborador ${esc(k.mat)}`}</td>
       <td class="tag-sem">${esc(k.departamento || 'Não informado')}</td>
       <td>${badgeEspec(k.espec)}</td>
-      <td class="num" style="font-weight:600">${numBR(k.gratif)}</td>
+      <td class="num" style="font-weight:600">${numBR(k.gratif)}${!k.viagens ? '<div class="tag-sem" style="color:var(--ambar)" title="Nenhuma pesagem registrada no período — o valor vem do ajuste manual">sem produção registrada</div>' : ''}</td>
       <td class="num">${k.ajustePct ? `<span style="color:var(--azul);font-weight:600" title="${esc(k.ajusteObs || '')}">+${numBR(k.ajustePct, 1)}%</span>` : '<span style="color:var(--muted)">—</span>'}</td>
       <td class="num" style="font-weight:600">${numBR(k.totalReceber)}</td>
       <td>
@@ -1432,7 +1440,7 @@ function renderGratificacoesAprovacao() {
       <div class="linha-form" style="justify-content:space-between">
         <div>
           <h2 style="margin:0">Aprovação das gratificações</h2>
-          <div class="dica" style="margin:4px 0 0">Todos os colaboradores do período precisam de revisão de Gerente e Diretoria. Aprovar aqui é um sinal de "revisado e conferido" — não trava o valor, que continua calculado ao vivo. Cada papel pode desfazer o próprio voto quando quiser.</div>
+          <div class="dica" style="margin:4px 0 0">${lista.length} colaborador${lista.length === 1 ? '' : 'es'} para revisão de Gerente e Diretoria${f.soComValor ? ` (de ${CALC.lista.length} no período — os demais não têm valor a pagar)` : ''}. Aprovar aqui é um sinal de "revisado e conferido" — não trava o valor, que continua calculado ao vivo. Cada papel pode desfazer o próprio voto quando quiser.</div>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
           <input id="aprovBusca" placeholder="Buscar nome ou matrícula…" value="${esc(f.busca)}" style="width:200px">
@@ -1452,6 +1460,9 @@ function renderGratificacoesAprovacao() {
             <option value="PENDENTES" ${state.filtroAprovStatus === 'PENDENTES' ? 'selected' : ''}>Pendentes da minha aprovação</option>
             <option value="APROVADOS" ${state.filtroAprovStatus === 'APROVADOS' ? 'selected' : ''}>Já aprovados por mim</option>
           </select>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;white-space:nowrap" title="Esconde quem não tem valor a pagar no período (sem produção e sem ajuste)">
+            <input type="checkbox" id="aprovSoComValor" ${f.soComValor ? 'checked' : ''}> Só com valor a aprovar
+          </label>
           <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;white-space:nowrap">
             <input type="checkbox" id="aprovSoAjuste" ${f.soComAjuste ? 'checked' : ''}> Só com ajuste manual
           </label>
@@ -1484,6 +1495,8 @@ function wireAprovacoes() {
   if (aprovDepto) aprovDepto.onchange = e => { fg.departamento = e.target.value; render(); };
   const aprovSoAjuste = $('#aprovSoAjuste');
   if (aprovSoAjuste) aprovSoAjuste.onchange = e => { fg.soComAjuste = e.target.checked; render(); };
+  const aprovSoComValor = $('#aprovSoComValor');
+  if (aprovSoComValor) aprovSoComValor.onchange = e => { fg.soComValor = e.target.checked; render(); };
   const aprovStatusFiltro = $('#aprovStatusFiltro');
   if (aprovStatusFiltro) aprovStatusFiltro.onchange = e => { state.filtroAprovStatus = e.target.value; render(); };
 
