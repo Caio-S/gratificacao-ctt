@@ -252,11 +252,92 @@ function showAviso(tipo, txt) {
   el.style.display = 'block';
 }
 
+/* =============== animação "gooey" nas abas (GooeyNav, portado sem React) === */
+const GOOEY_PARTICULAS = 12;
+const GOOEY_DISTANCIAS = [80, 10];
+const GOOEY_RAIO = 100;
+const GOOEY_TEMPO_ANIM = 500;
+const GOOEY_VARIACAO_TEMPO = 200;
+const GOOEY_CORES = [1, 2, 3, 4, 1, 2];
+
+const _gooeyRuido = (n = 1) => n / 2 - Math.random() * n;
+
+function _gooeyPosicaoXY(distancia, indice, total) {
+  const angulo = ((360 + _gooeyRuido(8)) / total) * indice * (Math.PI / 180);
+  return [distancia * Math.cos(angulo), distancia * Math.sin(angulo)];
+}
+
+function _gooeyCriarParticula(i, t, d, r) {
+  const rotacao = _gooeyRuido(r / 10);
+  return {
+    start: _gooeyPosicaoXY(d[0], GOOEY_PARTICULAS - i, GOOEY_PARTICULAS),
+    end: _gooeyPosicaoXY(d[1] + _gooeyRuido(7), GOOEY_PARTICULAS - i, GOOEY_PARTICULAS),
+    time: t,
+    scale: 1 + _gooeyRuido(0.2),
+    cor: GOOEY_CORES[Math.floor(Math.random() * GOOEY_CORES.length)],
+    rotate: rotacao > 0 ? (rotacao + r / 20) * 10 : (rotacao - r / 20) * 10,
+  };
+}
+
+function _gooeyExplodirParticulas() {
+  const efeito = $('#gooeyEfeito');
+  if (!efeito) return;
+  efeito.querySelectorAll('.gooey-particula').forEach(p => efeito.removeChild(p));
+  efeito.classList.remove('ativo');
+  const tempoBolha = GOOEY_TEMPO_ANIM * 2 + GOOEY_VARIACAO_TEMPO;
+  efeito.style.setProperty('--tempo', `${tempoBolha}ms`);
+  for (let i = 0; i < GOOEY_PARTICULAS; i++) {
+    const t = GOOEY_TEMPO_ANIM * 2 + _gooeyRuido(GOOEY_VARIACAO_TEMPO * 2);
+    const p = _gooeyCriarParticula(i, t, GOOEY_DISTANCIAS, GOOEY_RAIO);
+    setTimeout(() => {
+      const particula = document.createElement('span');
+      const ponto = document.createElement('span');
+      particula.className = 'gooey-particula';
+      particula.style.setProperty('--start-x', `${p.start[0]}px`);
+      particula.style.setProperty('--start-y', `${p.start[1]}px`);
+      particula.style.setProperty('--end-x', `${p.end[0]}px`);
+      particula.style.setProperty('--end-y', `${p.end[1]}px`);
+      particula.style.setProperty('--tempo', `${p.time}ms`);
+      particula.style.setProperty('--scale', `${p.scale}`);
+      particula.style.setProperty('--cor', `var(--gooey-cor-${p.cor}, white)`);
+      particula.style.setProperty('--rotate', `${p.rotate}deg`);
+      ponto.className = 'gooey-ponto';
+      particula.appendChild(ponto);
+      efeito.appendChild(particula);
+      requestAnimationFrame(() => efeito.classList.add('ativo'));
+      setTimeout(() => { try { efeito.removeChild(particula); } catch (_) { /* ja removido */ } }, p.time);
+    }, 30);
+  }
+}
+
+function _gooeyAtualizarPosicao(botao) {
+  const container = $('#abas');
+  const efeito = $('#gooeyEfeito');
+  if (!container || !efeito || !botao) return;
+  const rectContainer = container.getBoundingClientRect();
+  const rectBotao = botao.getBoundingClientRect();
+  efeito.style.left = `${rectBotao.left - rectContainer.left}px`;
+  efeito.style.top = `${rectBotao.top - rectContainer.top}px`;
+  efeito.style.width = `${rectBotao.width}px`;
+  efeito.style.height = `${rectBotao.height}px`;
+}
+
+function wireGooeyNav() {
+  const container = $('#abas');
+  if (!container) return;
+  new ResizeObserver(() => {
+    const atual = container.querySelector('.aba.ativa');
+    if (atual) _gooeyAtualizarPosicao(atual);
+  }).observe(container);
+}
+
 /* =============== navegacao =============== */
 const VIEWS_QUE_USAM_CALCULO = new Set(['calculo', 'semanal', 'diretoria', 'extrato', 'aprovacoes']);
 async function setView(v) {
   state.view = v;
   document.querySelectorAll('.aba').forEach(b => b.classList.toggle('ativa', b.dataset.v === v));
+  const botaoAtivo = document.querySelector('.aba.ativa');
+  if (botaoAtivo) _gooeyAtualizarPosicao(botaoAtivo);
   showAviso(null);
   $('#corpo').classList.toggle('largo', v === 'calculo');
   /* no extrato de um periodo fechado tudo vem do snapshot — nao precisa (nem
@@ -291,7 +372,11 @@ async function setView(v) {
   }
   render();
 }
-document.querySelectorAll('.aba').forEach(b => b.onclick = () => setView(b.dataset.v));
+document.querySelectorAll('.aba').forEach(b => b.onclick = () => {
+  if (!b.classList.contains('ativa')) { _gooeyAtualizarPosicao(b); _gooeyExplodirParticulas(); }
+  setView(b.dataset.v);
+});
+wireGooeyNav();
 
 $('#chkNomes').onchange = e => { state.exibirNomes = e.target.checked; render(); };
 
