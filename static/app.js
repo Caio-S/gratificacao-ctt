@@ -1681,18 +1681,21 @@ function renderEvolucaoPeriodos() {
   /* ordem cronologica pra evolucao ser lida da esquerda pra direita */
   const ordem = [...FECHAMENTOS].sort((a, b) => a.periodo.inicio.localeCompare(b.periodo.inicio));
   const maxGratif = Math.max(1, ...ordem.map(f => f.resumo.gratif));
-  return `
-    <div class="cartao">
-      <h2>Evolução por período</h2>
-      <div class="dica">Gratificação total de cada período já fechado.</div>
+  /* grafico so faz sentido comparando periodos; com um so, a tabela ja diz tudo */
+  const grafico = ordem.length > 1 ? `
       <div class="colunas" style="height:150px">
         ${ordem.map(f => `
           <div class="col" title="${esc(rotuloPeriodo(f.periodo))}">
             <div class="v">${numBR(f.resumo.gratif / 1000, 0)}k</div>
-            <i style="height:${Math.max(3, 100 * f.resumo.gratif / maxGratif)}%"></i>
+            <i style="height:${Math.round(Math.max(4, 108 * f.resumo.gratif / maxGratif))}px"></i>
             <div class="lab">${esc(brDate(f.periodo.inicio).slice(3))}</div>
           </div>`).join('')}
-      </div>
+      </div>` : '';
+  return `
+    <div class="cartao">
+      <h2>Evolução por período</h2>
+      <div class="dica">${ordem.length > 1 ? 'Gratificação total de cada período já fechado.' : 'Assim que houver um segundo período fechado, a comparação entre eles aparece aqui.'}</div>
+      ${grafico}
       <div class="scroll-x" style="margin-top:16px">
         <table>
           <thead><tr>
