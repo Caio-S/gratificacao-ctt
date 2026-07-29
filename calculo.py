@@ -48,16 +48,23 @@ def _valor_pesagem(pesagem, parametros):
     return pesagem["peso"] * rate
 
 
-def _dias_trabalhados_periodo(admissao, periodo_inicio, periodo_fim, dias_base):
-    """Dias efetivamente trabalhados dentro do periodo, considerando a data de
-    admissao (so exibicao - nao entra na formula de prorata da gratificacao,
-    que continua usando o campo 'dias' vindo da planilha/dias-base)."""
-    if not admissao:
+def _dias_trabalhados_periodo(admissao, periodo_inicio, data_corte, dias_base):
+    """Dias do periodo JA DECORRIDOS (ate a data de corte dos dados) que o
+    colaborador pegou, limitado aos dias-base.
+
+    Num periodo em andamento isso encolhe junto com os dados: com 13 de 31 dias
+    importados ninguem aparece com 25 dias trabalhados. So exibicao - nao entra
+    na formula da gratificacao, que usa o campo 'dias' do cadastro."""
+    if not periodo_inicio or not data_corte:
         return dias_base
+    decorridos = (data_corte - periodo_inicio).days + 1
+    limite = max(0, min(dias_base, decorridos))
+    if not admissao:
+        return limite
     inicio_efetivo = max(admissao, periodo_inicio)
-    if inicio_efetivo > periodo_fim:
+    if inicio_efetivo > data_corte:
         return 0
-    return min(dias_base, (periodo_fim - inicio_efetivo).days + 1)
+    return max(0, min(limite, (data_corte - inicio_efetivo).days + 1))
 
 
 def _dias_corridos_no_periodo(admissao, periodo_inicio, periodo_fim):
@@ -276,7 +283,7 @@ def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, par
         k["gratif"] = gratif
         k["totalReceber"] = k["sal"] + gratif
         k["kmMed"] = k["kmSoma"] / k["viagens"] if k["viagens"] else 0
-        k["diasTrabalhados"] = _dias_trabalhados_periodo(k.get("admissao"), periodo_inicio, periodo_fim, dias_base)
+        k["diasTrabalhados"] = _dias_trabalhados_periodo(k.get("admissao"), periodo_inicio, data_corte, dias_base)
         # quem foi admitido durante o periodo nao pode ser cobrado pelo teto
         # cheio: o teto efetivo e a fracao do teto correspondente aos dias
         # CORRIDOS do periodo que ele pegou (ex.: 1275 / 30 x 14 = 595), e e
@@ -286,7 +293,13 @@ def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, par
         k["tetoEfetivo"] = k["teto"] * (k["diasPeriodo"] / dias_corridos_periodo) if dias_corridos_periodo else k["teto"]
         k["atingPct"] = gratif / k["tetoEfetivo"] if k["tetoEfetivo"] else 0
         entrada_jornada = jornada_por_mat.get(k["mat"]) or {}
-        k["faltas"] = entrada_jornada.get("faltas") or []
+        # a jornada e buscada pro periodo inteiro; num periodo em andamento so
+        # valem as faltas ate onde os dados vao
+        data_corte_iso = data_corte.isoformat() if data_corte else None
+        k["faltas"] = [
+            f for f in (entrada_jornada.get("faltas") or [])
+            if not data_corte_iso or f.get("data", "") <= data_corte_iso
+        ]
         # dias trabalhados de verdade: conta os dias que de fato aparecem na
         # planilha de jornada (nao um "dias-base" fixo) menos os dias sem
         # expediente (D.S.R., feriado, ferias, atestado...). So exibicao, nao
@@ -295,7 +308,11 @@ def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, par
         # esperados (admissao/dias-base) menos as faltas, igual antes.
         total_dias_jornada = entrada_jornada.get("totalDias")
         if total_dias_jornada:
-            k["diasTrabalhadosReal"] = max(0, total_dias_jornada - len(k["faltas"]))
+            # totalDias e do periodo inteiro; num periodo em andamento limita
+            # pelos dias corridos que ja entraram (a escala do RH tem entrada
+            # pra todo dia do periodo, inclusive folgas)
+            dias_escala = min(total_dias_jornada, k["diasPeriodo"]) if k["diasPeriodo"] else total_dias_jornada
+            k["diasTrabalhadosReal"] = max(0, dias_escala - len(k["faltas"]))
         else:
             k["diasTrabalhadosReal"] = max(0, k["diasTrabalhados"] - len(k["faltas"]))
         resultado.append(k)
