@@ -31,6 +31,9 @@ const state = {
   exibirNomes: false,
   extratoMat: null,
   extratoSemanaAberta: null,
+  /* null = extrato do periodo aberto; com a chave de um periodo fechado, a
+     mesma tela roda em cima do snapshot congelado daquele mes */
+  extratoFechamento: null,
   ajusteModalMat: null,
   filtroAprovStatus: 'TODOS',
   /* cada aba com filtro proprio tem seu objeto isolado — nao ha estado de
@@ -45,7 +48,7 @@ const state = {
   /* soComValor liga por padrao: a aprovacao so faz sentido pra quem tem valor
      a pagar — sem isso a lista vem com centenas de linhas zeradas */
   filtroAprovacoes: { busca: '', especialidade: 'TODOS', departamento: 'TODOS', soComAjuste: false, soComValor: true },
-  filtroHistorico: { chave: null, busca: '', especialidade: 'TODOS', departamento: 'TODOS', matExtrato: null },
+  filtroHistorico: { chave: null, busca: '', especialidade: 'TODOS', departamento: 'TODOS' },
   extratoRelatorioModalAberto: false,
   extratoRelatorioIntervalo: null,
   faltasModalMat: null,
@@ -256,9 +259,18 @@ async function setView(v) {
   document.querySelectorAll('.aba').forEach(b => b.classList.toggle('ativa', b.dataset.v === v));
   showAviso(null);
   $('#corpo').classList.toggle('largo', v === 'calculo');
-  if (VIEWS_QUE_USAM_CALCULO.has(v)) {
+  /* no extrato de um periodo fechado tudo vem do snapshot — nao precisa (nem
+     deve) rodar o calculo do periodo aberto */
+  const extratoCongelado = v === 'extrato' && state.extratoFechamento;
+  if (VIEWS_QUE_USAM_CALCULO.has(v) && !extratoCongelado) {
     $('#main').innerHTML = '<div class="cartao"><div class="dica">Calculando…</div></div>';
     try { await carregarCalculo(); } catch (e) { showAviso('erro', 'Falha ao calcular: ' + e.message); }
+  }
+  if (v === 'extrato') {
+    try {
+      if (!FECHAMENTOS.length) await carregarFechamentos();
+      if (state.extratoFechamento) await carregarFechamentoDetalhe(state.extratoFechamento);
+    } catch (e) { showAviso('erro', 'Falha ao carregar período fechado: ' + e.message); }
   }
   if (v === 'aprovacoes') {
     try { await carregarAprovacoesGratificacao(); } catch (e) { showAviso('erro', 'Falha ao carregar aprovações: ' + e.message); }
@@ -297,11 +309,39 @@ function placeholder(titulo) {
   return `<div class="cartao"><h2>${esc(titulo)}</h2><div class="dica">Em construção — chega nas próximas fases.</div></div>`;
 }
 /* =============== aba: relatorio semanal =============== */
-function semanasDoPeriodo() {
-  const inicio = new Date(DADOS.periodo.inicio + 'T00:00:00');
-  const fim = new Date(DADOS.periodo.fim + 'T00:00:00');
+/* De onde o extrato tira os dados: do periodo aberto (calculo ao vivo) ou do
+   snapshot de um periodo ja fechado. As duas telas usam o MESMO render — muda
+   so a origem de lista/periodo/parametros/dias-base. */
+function contextoExtrato() {
+  const snap = FECHAMENTO_DETALHE;
+  if (state.extratoFechamento && snap && chavePeriodo(snap.periodo) === state.extratoFechamento) {
+    return {
+      congelado: true,
+      lista: snap.colaboradores,
+      periodo: snap.periodo,
+      nSem: snap.nSem || 0,
+      diasBase: snap.diasBase,
+      parametros: snap.parametros || PARAMS,
+      frotas: [],
+    };
+  }
+  return {
+    congelado: false,
+    lista: CALC ? CALC.lista : [],
+    periodo: DADOS.periodo,
+    nSem: CALC ? CALC.nSem : 0,
+    diasBase: DADOS.diasBase,
+    parametros: PARAMS,
+    frotas: DADOS.frotas || [],
+  };
+}
+
+function semanasDoPeriodo(ctx) {
+  const c = ctx || { periodo: DADOS.periodo, nSem: CALC ? CALC.nSem : 0 };
+  const inicio = new Date(c.periodo.inicio + 'T00:00:00');
+  const fim = new Date(c.periodo.fim + 'T00:00:00');
   const semanas = [];
-  for (let idx = 0; idx < (CALC ? CALC.nSem : 0); idx++) {
+  for (let idx = 0; idx < c.nSem; idx++) {
     const ini = new Date(inicio.getTime() + idx * 7 * 86400000);
     const fimSem = new Date(Math.min(fim.getTime(), ini.getTime() + 6 * 86400000));
     semanas.push({ idx, rotulo: `Sem ${idx + 1}`, faixa: `${dataCurta(ini)}–${dataCurta(fimSem)}` });
@@ -559,17 +599,33 @@ function tonReferencia(km, tabelaNome) {
   return kmArred > tabela[tabela.length - 1].fim ? tabela[tabela.length - 1].ton : tabela[0].ton;
 }
 
+function seletorPeriodoExtrato() {
+  return `
+    <div class="linha-form no-print">
+      <div class="campo">
+        <label>Período</label>
+        <select id="extratoPeriodo" style="min-width:200px">
+          <option value="">Período aberto — ${esc(rotuloPeriodo(DADOS.periodo))}</option>
+          ${FECHAMENTOS.map(x => `<option value="${esc(chavePeriodo(x.periodo))}" ${chavePeriodo(x.periodo) === state.extratoFechamento ? 'selected' : ''}>Fechado — ${esc(rotuloPeriodo(x.periodo))}</option>`).join('')}
+        </select>
+      </div>
+      ${state.extratoFechamento ? '<button class="btn sec" id="btnVoltarHistorico">← Voltar ao histórico</button>' : ''}
+    </div>`;
+}
+
 function renderExtrato() {
-  if (!CALC) return placeholder('Extrato colaborador');
-  const pe = CALC.lista.filter(k => k.viagens > 0);
-  const me = pe.find(k => k.mat === state.extratoMat) || pe[0];
+  const ctx = contextoExtrato();
+  if (!ctx.congelado && !CALC) return placeholder('Extrato colaborador');
+  const P = ctx.parametros;
+  const pe = ctx.lista.filter(k => k.viagens > 0);
+  const me = pe.find(k => String(k.mat) === String(state.extratoMat)) || pe[0];
   if (!me) {
-    return `<div class="cartao"><h2>Extrato do colaborador</h2><div class="dica">Sem dados — importe as bases ou carregue a demonstração na aba Dados.</div></div>`;
+    return `${seletorPeriodoExtrato(ctx)}<div class="cartao"><h2>Extrato do colaborador</h2><div class="dica">${ctx.congelado ? 'Nenhum colaborador com produção registrada neste período fechado.' : 'Sem dados — importe as bases ou carregue a demonstração na aba Dados.'}</div></div>`;
   }
-  const especCfg = (PARAMS.especialidades || []).find(e => e.chave === me.espec) || {};
+  const especCfg = (P.especialidades || []).find(e => e.chave === me.espec) || {};
   const tabelaNome = especCfg.tabela || 'canavieiro';
-  const referenciaDia = km => me.espec === 'COLHEDORA' ? PARAMS.tetoColhedora.metaDia
-    : me.espec === 'TRANSBORDO' ? PARAMS.tetoTransbordo.metaDia
+  const referenciaDia = km => me.espec === 'COLHEDORA' ? P.tetoColhedora.metaDia
+    : me.espec === 'TRANSBORDO' ? P.tetoTransbordo.metaDia
     : tonReferencia(km, tabelaNome);
   if (state.extratoRelatorioIntervalo) {
     return renderRelatorioDetalhado(me, referenciaDia);
@@ -577,16 +633,17 @@ function renderExtrato() {
   const especLabelFull = { CAMINHAO: 'Caminhão canavieiro', 'BATE-VOLTA': 'Caminhão bate e volta', COLHEDORA: 'Colhedora de cana', TRANSBORDO: 'Trator transbordo' }[me.espec] || me.espec;
   const producaoBruta = me['prodR$'];
   const faltaTeto = Math.max(0, tetoDe(me) - me.gratif);
-  const semanas = semanasDoPeriodo();
-  const maxSemValor = Math.max(1, ...semanas.map(s => (me.semanas[String(s.idx)] || {}).valor || 0));
+  const semanas = semanasDoPeriodo(ctx);
+  const semanasDoColab = me.semanas || {};
+  const maxSemValor = Math.max(1, ...semanas.map(s => (semanasDoColab[String(s.idx)] || {}).valor || 0));
   let acumulado = 0;
   const semanasAcum = semanas.map(s => {
-    const w = me.semanas[String(s.idx)];
+    const w = semanasDoColab[String(s.idx)];
     acumulado += w ? w.valor : 0;
     return { ...s, w, acum: acumulado };
   });
   const pctGratifDoTotal = me.totalReceber > 0 ? me.gratif / me.totalReceber * 100 : 0;
-  const diasBase = DADOS.diasBase;
+  const diasBase = ctx.diasBase;
 
   const semanaAberta = semanasAcum.find(s => s.idx === state.extratoSemanaAberta);
 
@@ -638,17 +695,28 @@ function renderExtrato() {
 
   return `
     <div class="linha-form no-print" style="justify-content:space-between">
-      <div class="campo">
-        <label>Colaborador (matrícula)</label>
-        <select id="extratoSelect" style="min-width:260px">
-          ${pe.map(k => `<option value="${esc(k.mat)}" ${k.mat === me.mat ? 'selected' : ''}>${esc(k.mat)}${state.exibirNomes ? ' — ' + esc(k.nome) : ''} · ${ESPEC_LABEL[k.espec] || esc(k.espec)}</option>`).join('')}
-        </select>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end">
+        <div class="campo">
+          <label>Período</label>
+          <select id="extratoPeriodo" style="min-width:200px">
+            <option value="">Período aberto — ${esc(rotuloPeriodo(DADOS.periodo))}</option>
+            ${FECHAMENTOS.map(x => `<option value="${esc(chavePeriodo(x.periodo))}" ${chavePeriodo(x.periodo) === state.extratoFechamento ? 'selected' : ''}>Fechado — ${esc(rotuloPeriodo(x.periodo))}</option>`).join('')}
+          </select>
+        </div>
+        <div class="campo">
+          <label>Colaborador (matrícula)</label>
+          <select id="extratoSelect" style="min-width:260px">
+            ${pe.map(k => `<option value="${esc(k.mat)}" ${String(k.mat) === String(me.mat) ? 'selected' : ''}>${esc(k.mat)}${state.exibirNomes ? ' — ' + esc(k.nome) : ''} · ${ESPEC_LABEL[k.espec] || esc(k.espec)}</option>`).join('')}
+          </select>
+        </div>
       </div>
       <div style="display:flex;gap:8px">
+        ${ctx.congelado ? '<button class="btn sec" id="btnVoltarHistorico">← Voltar ao histórico</button>' : ''}
         <button class="btn sec" id="btnRelatorioDetalhado">📅 Relatório detalhado</button>
         <button class="btn" id="btnImprimirExtrato">Imprimir extrato / PDF</button>
       </div>
     </div>
+    ${ctx.congelado ? `<div class="aviso ok no-print">Período <b>fechado</b> em ${esc((FECHAMENTO_DETALHE.fechadoEm || '').slice(0, 10).split('-').reverse().join('/'))} por ${esc(FECHAMENTO_DETALHE.fechadoPor || '—')} — valores congelados, não mudam com importações novas.</div>` : ''}
 
     <div class="cartao">
       <div class="recibo-topo">
@@ -659,7 +727,7 @@ function renderExtrato() {
         </div>
         <div style="text-align:right">
           <div style="font-family:'Barlow Condensed';font-weight:700;font-size:20px;color:var(--verde-esc);text-transform:uppercase;letter-spacing:.6px">Extrato de gratificação</div>
-          <div class="tag-sem">Período ${brDate(DADOS.periodo.inicio)} a ${brDate(DADOS.periodo.fim)} · ${me.dias} de ${diasBase} dias trabalhados (base prorata)</div>
+          <div class="tag-sem">Período ${brDate(ctx.periodo.inicio)} a ${brDate(ctx.periodo.fim)}${me.dias != null ? ` · ${me.dias} de ${diasBase} dias trabalhados (base prorata)` : ''}</div>
         </div>
       </div>
       <div class="comp">
@@ -667,13 +735,13 @@ function renderExtrato() {
           <div class="r">Gratificação de produção</div>
           <div class="v">${brl(me.gratif)}</div>
           <div class="d">${numBR(me.ton, 1)} t em ${me.viagens} pesagens${me.kmMed ? ` · raio méd. ${numBR(me.kmMed, 0)} km` : ''}</div>
-          <div class="d">${numBR(producaoBruta)} produzido${me.dias < diasBase ? ` × ${me.dias}/${diasBase} dias` : ''}${PARAMS.aplicarTeto && producaoBruta > me.teto ? ' · travado no teto' : ''}</div>
+          <div class="d">${numBR(producaoBruta)} produzido${me.dias != null && me.dias < diasBase ? ` × ${me.dias}/${diasBase} dias` : ''}${P.aplicarTeto && producaoBruta > me.teto ? ' · travado no teto' : ''}</div>
         </div>
         <div class="bloco">
           <div class="r">Teto da gratificação — ${brl(tetoDe(me))}</div>
           <div class="v" style="color:${me.atingPct >= 1 ? 'var(--ambar)' : 'var(--verde-esc)'}">${numBR(me.atingPct * 100, 1)}%</div>
           <div class="barra" style="height:10px;margin:4px 0 6px"><i class="${me.atingPct > 1 ? 'acima' : ''}" style="width:${Math.min(100, me.atingPct * 100)}%"></i></div>
-          ${tetoParcial(me) ? `<div class="d">Teto prorata: ${me.diasPeriodo} de ${diasNoPeriodo(DADOS.periodo.inicio, DADOS.periodo.fim)} dias do período (admissão em ${brDate(me.admissao)}) · teto cheio ${brl(me.teto)}</div>` : ''}
+          ${tetoParcial(me) ? `<div class="d">Teto prorata: ${me.diasPeriodo} de ${diasNoPeriodo(ctx.periodo.inicio, ctx.periodo.fim)} dias do período (admissão em ${brDate(me.admissao)}) · teto cheio ${brl(me.teto)}</div>` : ''}
           ${me.atingPct >= 1
             ? `<div class="d" style="color:var(--ambar);font-weight:600">Passou do teto em ${brl(me.gratif - tetoDe(me))}</div>`
             : `<div class="d">Faltam ${brl(faltaTeto)} para 100% do teto</div>`}
@@ -757,7 +825,8 @@ function todosDiasColaborador(me) {
 
 function renderRelatorioSelecaoModal() {
   if (!state.extratoRelatorioModalAberto) return '';
-  const min = DADOS.periodo.inicio, max = DADOS.periodo.fim;
+  const { periodo } = contextoExtrato();
+  const min = periodo.inicio, max = periodo.fim;
   return `
     <div class="modal-ov no-print" id="relatorioSelecaoOv">
       <div class="modal-box" id="relatorioSelecaoBox">
@@ -842,7 +911,7 @@ function renderRelatorioDetalhado(me, referenciaDia) {
           </tbody>
         </table>
       </div>
-      <div class="tag-sem" style="margin-top:12px">Relatório gerado a partir do extrato do colaborador · matrícula ${esc(me.mat)} · período de apuração completo ${brDate(DADOS.periodo.inicio)} a ${brDate(DADOS.periodo.fim)}.</div>
+      <div class="tag-sem" style="margin-top:12px">Relatório gerado a partir do extrato do colaborador · matrícula ${esc(me.mat)} · período de apuração completo ${brDate(contextoExtrato().periodo.inicio)} a ${brDate(contextoExtrato().periodo.fim)}.</div>
     </div>`;
 }
 
@@ -854,6 +923,23 @@ function wireExtrato() {
     if (btnImprimirRel) btnImprimirRel.onclick = () => window.print();
     return;
   }
+  const selPeriodo = $('#extratoPeriodo');
+  if (selPeriodo) selPeriodo.onchange = async e => {
+    state.extratoFechamento = e.target.value || null;
+    state.extratoMat = null;
+    state.extratoSemanaAberta = null;
+    state.extratoRelatorioIntervalo = null;
+    if (state.extratoFechamento) {
+      $('#main').innerHTML = '<div class="cartao"><div class="dica">Carregando período fechado…</div></div>';
+      try { await carregarFechamentoDetalhe(state.extratoFechamento); } catch (err) { showToast('erro', err.message); }
+    }
+    render();
+  };
+  const btnVoltarHist = $('#btnVoltarHistorico');
+  if (btnVoltarHist) btnVoltarHist.onclick = () => {
+    state.filtroHistorico.chave = state.extratoFechamento;
+    setView('historico');
+  };
   const select = $('#extratoSelect');
   if (select) select.onchange = e => { state.extratoMat = e.target.value; state.extratoSemanaAberta = null; render(); };
   const btnImprimir = $('#btnImprimirExtrato');
@@ -1825,78 +1911,6 @@ function renderHistorico() {
             </tr>`).join('') : '<tr><td colspan="14" style="text-align:center;padding:24px;color:var(--muted)">Nenhum colaborador com esses filtros.</td></tr>'}</tbody>
         </table>
       </div>
-    </div>
-    ${renderHistoricoExtratoModal()}`;
-}
-
-function renderHistoricoExtratoModal() {
-  const mat = state.filtroHistorico.matExtrato;
-  if (!mat || !FECHAMENTO_DETALHE) return '';
-  const k = FECHAMENTO_DETALHE.colaboradores.find(x => String(x.mat) === String(mat));
-  if (!k) return '';
-  const snap = FECHAMENTO_DETALHE;
-  const teto = k.tetoEfetivo ?? k.teto;
-  const semanas = k.semanas || {};
-  const temSemanas = Object.keys(semanas).length > 0;
-  const frotas = Object.entries(k.frotas || {}).sort((a, b) => b[1].ton - a[1].ton);
-  return `
-    <div class="modal-ov no-print" id="histExtratoOv">
-      <div class="modal-box largo" id="histExtratoBox">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
-          <div>
-            <h3>Extrato — ${esc(k.mat)}${state.exibirNomes ? ' · ' + esc(k.nome) : ''}</h3>
-            <div class="dica" style="margin:4px 0 0">${esc(rotuloPeriodo(snap.periodo))} · ${esc(k.funcao || '')} · ${esc(k.departamento || '')}</div>
-          </div>
-          <button class="modal-fecha" id="histExtratoFechar">×</button>
-        </div>
-        <div class="comp">
-          <div class="bloco">
-            <div class="r">Produção</div>
-            <div class="v">${numBR(k.ton, 1)} t</div>
-            <div class="d">${k.viagens} pesagens${k.kmMed ? ` · raio méd. ${numBR(k.kmMed, 0)} km` : ''}</div>
-          </div>
-          <div class="bloco">
-            <div class="r">Teto — ${brl(teto)}</div>
-            <div class="v" style="color:${k.atingPct >= 1 ? 'var(--ambar)' : 'var(--verde-esc)'}">${numBR((k.atingPct || 0) * 100, 1)}%</div>
-            <div class="barra" style="height:10px;margin:4px 0 6px"><i class="${k.atingPct > 1 ? 'acima' : ''}" style="width:${Math.min(100, (k.atingPct || 0) * 100)}%"></i></div>
-            ${teto < k.teto ? `<div class="d">Prorata: ${k.diasPeriodo} dias do período (teto cheio ${brl(k.teto)})</div>` : ''}
-          </div>
-          <div class="bloco total">
-            <div class="r">Total a receber</div>
-            <div class="v">${brl(k.totalReceber)}</div>
-            <div class="d">salário ${brl(k.sal)} + gratificação ${brl(k.gratif)}</div>
-          </div>
-        </div>
-        ${k.ajustePct ? `<div class="aviso alerta" style="margin-top:4px"><b>Ajuste manual de +${numBR(k.ajustePct, 1)}%</b> (${brl(k.ajusteValor || 0)}) — ${esc(k.ajusteObs || 'sem observação')}</div>` : ''}
-        <div class="linha-form" style="margin:6px 0 0">
-          <span class="tag-sem">Aprovações: ${k.aprovadoGerentePor ? `✓ Gerente (${esc(k.aprovadoGerentePor)})` : '— Gerente'} · ${k.aprovadoDiretoriaPor ? `✓ Diretoria (${esc(k.aprovadoDiretoriaPor)})` : '— Diretoria'}</span>
-        </div>
-        ${temSemanas ? `
-          <h3 style="margin-top:14px;font-size:15px">Por semana</h3>
-          <div class="scroll-x">
-            <table>
-              <thead><tr><th>Semana</th><th class="num">Viagens</th><th class="num">Toneladas</th><th class="num">Produção (R$)</th></tr></thead>
-              <tbody>${Object.entries(semanas).sort((a, b) => +a[0] - +b[0]).map(([idx, s]) => `
-                <tr><td>Sem ${+idx + 1}</td><td class="num">${s.viagens}</td><td class="num">${numBR(s.ton, 1)}</td><td class="num">${numBR(s.valor)}</td></tr>`).join('')}</tbody>
-            </table>
-          </div>` : '<div class="tag-sem" style="margin-top:12px">Detalhe semanal não disponível: este período foi fechado antes do snapshot passar a guardar essa quebra.</div>'}
-        ${frotas.length ? `
-          <h3 style="margin-top:14px;font-size:15px">Frotas</h3>
-          <div class="scroll-x">
-            <table>
-              <thead><tr><th>Frota</th><th class="num">Toneladas</th><th class="num">Viagens</th></tr></thead>
-              <tbody>${frotas.map(([cod, v]) => `<tr><td class="mono">${esc(cod)}</td><td class="num">${numBR(v.ton, 1)}</td><td class="num">${v.vg}</td></tr>`).join('')}</tbody>
-            </table>
-          </div>` : ''}
-        ${(k.faltas || []).length ? `
-          <h3 style="margin-top:14px;font-size:15px">Dias sem expediente</h3>
-          <div class="scroll-x">
-            <table>
-              <thead><tr><th>Dia</th><th>Motivo</th></tr></thead>
-              <tbody>${k.faltas.map(fa => `<tr><td>${brDate(fa.data)}</td><td>${esc(fa.motivo)}</td></tr>`).join('')}</tbody>
-            </table>
-          </div>` : ''}
-      </div>
     </div>`;
 }
 
@@ -1926,7 +1940,6 @@ function wireHistorico() {
   const sel = $('#histPeriodo');
   if (sel) sel.onchange = async e => {
     f.chave = e.target.value;
-    f.matExtrato = null;
     $('#main').innerHTML = '<div class="cartao"><div class="dica">Carregando período…</div></div>';
     try { await carregarFechamentoDetalhe(f.chave); } catch (err) { showToast('erro', err.message); }
     render();
@@ -1958,21 +1971,23 @@ function wireHistorico() {
   $('#main').querySelectorAll('[data-verperiodo]').forEach(tr => {
     tr.onclick = async () => {
       f.chave = tr.dataset.verperiodo;
-      f.matExtrato = null;
       try { await carregarFechamentoDetalhe(f.chave); } catch (err) { showToast('erro', err.message); }
       render();
     };
   });
+  /* abre o extrato completo (mesma tela do periodo aberto) em cima do snapshot
+     deste periodo fechado, em vez do resumo em modal */
   $('#main').querySelectorAll('[data-histextrato]').forEach(btn => {
-    btn.onclick = e => { e.stopPropagation(); f.matExtrato = btn.dataset.histextrato; render(); };
+    btn.onclick = e => {
+      e.stopPropagation();
+      state.extratoFechamento = f.chave;
+      state.extratoMat = btn.dataset.histextrato;
+      state.extratoSemanaAberta = null;
+      state.extratoRelatorioIntervalo = null;
+      state.extratoRelatorioModalAberto = false;
+      setView('extrato');
+    };
   });
-  const ov = $('#histExtratoOv');
-  if (ov) {
-    const fechar = () => { f.matExtrato = null; render(); };
-    ov.onclick = fechar;
-    $('#histExtratoBox').onclick = e => e.stopPropagation();
-    $('#histExtratoFechar').onclick = fechar;
-  }
 }
 
 /* =============== aba: dados =============== */
