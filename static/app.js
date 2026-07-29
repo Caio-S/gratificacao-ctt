@@ -1,5 +1,25 @@
 'use strict';
 
+/* aplica o tema salvo antes de qualquer render, pra nao "piscar" claro
+   e so depois escurecer */
+(function iniciarTema() {
+  const salvo = localStorage.getItem('ctt-tema') || 'claro';
+  document.documentElement.setAttribute('data-tema', salvo);
+})();
+function alternarTema() {
+  const atual = document.documentElement.getAttribute('data-tema') === 'escuro' ? 'claro' : 'escuro';
+  document.documentElement.setAttribute('data-tema', atual);
+  localStorage.setItem('ctt-tema', atual);
+  atualizarBotaoTema();
+}
+function atualizarBotaoTema() {
+  const btn = document.getElementById('btnTema');
+  if (!btn) return;
+  const escuro = document.documentElement.getAttribute('data-tema') === 'escuro';
+  btn.innerHTML = icone(escuro ? 'sol' : 'lua');
+  btn.title = escuro ? 'Mudar para modo claro' : 'Mudar para modo escuro';
+}
+
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const brl = n => (Number(n) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -33,6 +53,8 @@ const ICONES = {
   calendario: '<rect x="3" y="4.5" width="18" height="16" rx="2"/><line x1="16" y1="2.5" x2="16" y2="6.5"/><line x1="8" y1="2.5" x2="8" y2="6.5"/><line x1="3" y1="9.5" x2="21" y2="9.5"/>',
   nota: '<path d="M3 21l1-4L16.5 4.5a2 2 0 0 1 2.83 0l.17.17a2 2 0 0 1 0 2.83L7 19l-4 2z"/><line x1="14.5" y1="6.5" x2="17.5" y2="9.5"/>',
   cadeado: '<rect x="3.5" y="11" width="17" height="10.5" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  sol: '<circle cx="12" cy="12" r="4.5"/><line x1="12" y1="1.5" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22.5"/><line x1="4.2" y1="4.2" x2="6" y2="6"/><line x1="18" y1="18" x2="19.8" y2="19.8"/><line x1="1.5" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22.5" y2="12"/><line x1="4.2" y1="19.8" x2="6" y2="18"/><line x1="18" y1="6" x2="19.8" y2="4.2"/>',
+  lua: '<path d="M20.5 14.5A8.5 8.5 0 1 1 9.5 3.5a7 7 0 0 0 11 11z"/>',
 };
 function icone(nome) {
   return `<svg class="icone-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONES[nome] || ''}</svg>`;
@@ -404,6 +426,8 @@ document.querySelectorAll('.aba').forEach(b => b.onclick = () => {
 });
 wireGooeyNav();
 wireBorderGlow();
+atualizarBotaoTema();
+$('#btnTema').onclick = alternarTema;
 
 $('#chkNomes').onchange = e => { state.exibirNomes = e.target.checked; render(); };
 
