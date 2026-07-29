@@ -10,6 +10,7 @@
   --btn-hover:#175634; --btn-sec-hover:#EFF5F0;
   --sombra-modal:rgba(0,0,0,.3); --overlay-modal:rgba(18,61,39,.55);
   --destaque-linha-bg:#FBF0D5; --dourado:#F5C56B;
+  --ajuste-bg:#EAF1FF; --ajuste-border:#B9D2F0;
 }
 :root[data-tema="escuro"]{
   color-scheme:dark;
@@ -22,6 +23,7 @@
   --btn-hover:#2F8557; --btn-sec-hover:#24312A;
   --sombra-modal:rgba(0,0,0,.6); --overlay-modal:rgba(6,20,12,.7);
   --destaque-linha-bg:#4A3B14; --dourado:#F0C878;
+  --ajuste-bg:#1B2A45; --ajuste-border:#2E4468;
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg)}
@@ -276,6 +278,7 @@ tr.linha-clic:hover td{background:var(--hover-linha-clic)}
     --verde:#1E6B41; --verde-esc:#123D27; --ambar:#B8741A; --linha:#D6DDD2;
     --vermelho:#A63A2B; --azul:#2A5D8F; --texto-forte:#123D27;
     --on-verde:#F2F6EF; --on-verde-dim:#A9C4B2; --dourado:#F5C56B;
+    --ajuste-bg:#EAF1FF; --ajuste-border:#B9D2F0;
   }
   .abas,.btn,.no-print,.aviso,input,select,.col-acoes{display:none!important}
   .app{background:#fff;color:var(--ink);min-height:0}

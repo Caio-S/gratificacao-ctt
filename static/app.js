@@ -889,7 +889,7 @@ function renderExtrato() {
           <div class="tag-sem" style="margin-top:4px">${esc(especLabelFull)}${me.funcao ? ' · ' + esc(me.funcao) : ''}</div>
         </div>
         <div style="text-align:right">
-          <div style="font-family:'Barlow Condensed';font-weight:700;font-size:20px;color:var(--verde-esc);text-transform:uppercase;letter-spacing:.6px">Extrato de gratificação</div>
+          <div style="font-family:'Barlow Condensed';font-weight:700;font-size:20px;color:var(--texto-forte);text-transform:uppercase;letter-spacing:.6px">Extrato de gratificação</div>
           <div class="tag-sem">Período ${brDate(ctx.periodo.inicio)} a ${brDate(ctx.periodo.fim)}${me.dias != null ? ` · ${me.dias} de ${diasBase} dias trabalhados (base prorata)` : ''}</div>
         </div>
       </div>
@@ -902,7 +902,7 @@ function renderExtrato() {
         </div>
         <div class="bloco">
           <div class="r">Teto da gratificação — ${brl(tetoDe(me))}</div>
-          <div class="v" style="color:${me.atingPct >= 1 ? 'var(--ambar)' : 'var(--verde-esc)'}">${numBR(me.atingPct * 100, 1)}%</div>
+          <div class="v" style="color:${me.atingPct >= 1 ? 'var(--ambar)' : 'var(--texto-forte)'}">${numBR(me.atingPct * 100, 1)}%</div>
           <div class="barra" style="height:10px;margin:4px 0 6px"><i class="${me.atingPct > 1 ? 'acima' : ''}" style="width:${Math.min(100, me.atingPct * 100)}%"></i></div>
           ${tetoParcial(me) ? `<div class="d">Teto prorata: ${me.diasPeriodo} de ${diasNoPeriodo(ctx.periodo.inicio, ctx.periodo.fim)} dias do período (admissão em ${brDate(me.admissao)}) · teto cheio ${brl(me.teto)}</div>` : ''}
           ${me.atingPct >= 1
@@ -956,9 +956,9 @@ function renderExtrato() {
         </table>
       </div>
       ${me.ajustePct ? `
-      <div class="ajuste-aplicado" style="margin-top:14px;padding:12px 14px;background:#EAF1FF;border:1px solid #B9D2F0;border-radius:6px">
+      <div class="ajuste-aplicado" style="margin-top:14px;padding:12px 14px;background:var(--ajuste-bg);border:1px solid var(--ajuste-border);border-radius:6px">
         <div style="font-weight:700;font-size:13px;color:var(--azul);text-transform:uppercase;letter-spacing:.4px">Ajuste manual aplicado — +${numBR(me.ajustePct, 1)}%</div>
-        <div style="margin-top:4px;font-size:13px">${esc(me.ajusteObs || '')}</div>
+        <div style="margin-top:4px;font-size:13px;color:var(--ink)">${esc(me.ajusteObs || '')}</div>
       </div>` : ''}
       <div class="tag-sem" style="margin-top:12px">Documento individual de conferência do colaborador · produção valorizada por pesagem conforme tabela vigente (R$/t × faixa de km) · gratificação proporcional aos dias trabalhados (base ${diasBase}) · valores não incluem horas extras e DSR · fechamento no dia 15.</div>
     </div>
@@ -1051,7 +1051,7 @@ function renderRelatorioDetalhado(me, referenciaDia) {
           <div class="tag-sem" style="margin-top:4px">${esc(especLabelFull)}${me.funcao ? ' · ' + esc(me.funcao) : ''}</div>
         </div>
         <div style="text-align:right">
-          <div style="font-family:'Barlow Condensed';font-weight:700;font-size:20px;color:var(--verde-esc);text-transform:uppercase;letter-spacing:.6px">Relatório detalhado</div>
+          <div style="font-family:'Barlow Condensed';font-weight:700;font-size:20px;color:var(--texto-forte);text-transform:uppercase;letter-spacing:.6px">Relatório detalhado</div>
           <div class="tag-sem">${rotuloPeriodo} · ${diasFiltrados.length} dia${diasFiltrados.length !== 1 ? 's' : ''} com produção</div>
         </div>
       </div>
@@ -1361,7 +1361,7 @@ function linhaCalculo(k) {
         ? `<button type="button" class="btn peq sec" data-detalhe="${esc(k.mat)}">${icone('lupa')}${frotasEntries.length} frota${frotasEntries.length > 1 ? 's' : ''} ${aberto ? '▴' : '▾'}</button>`
         : '—'}</td>
       <td class="num">${numBR(k.sal)}</td>
-      <td class="num" style="font-weight:600;color:var(--verde-esc)">${numBR(k.gratif)}</td>
+      <td class="num" style="font-weight:600;color:var(--texto-forte)">${numBR(k.gratif)}</td>
       <td class="num"${tetoParcial(k) ? ` title="Teto prorata: ${k.diasPeriodo} de ${diasNoPeriodo(DADOS.periodo.inicio, DADOS.periodo.fim)} dias do período (teto cheio R$ ${numBR(k.teto, 0)})"` : ''}>${numBR(tetoDe(k), 0)}${tetoParcial(k) ? '<span class="tag-sem" style="margin-left:3px">pr</span>' : ''}</td>
       <td><div style="display:flex;align-items:center;gap:6px">
         <div class="barra" style="width:80px"><i class="${k.atingPct > 1 ? 'acima' : ''}" style="width:${Math.min(100, k.atingPct * 100)}%"></i></div>
@@ -1961,7 +1961,7 @@ function renderEvolucaoPeriodos() {
               <td class="num">${r.colaboradores}</td>
               <td class="num">${numBR(r.ton, 0)}</td>
               <td class="num">${r.viagens.toLocaleString('pt-BR')}</td>
-              <td class="num" style="font-weight:600;color:var(--verde-esc)">${numBR(r.gratif, 0)}</td>
+              <td class="num" style="font-weight:600;color:var(--texto-forte)">${numBR(r.gratif, 0)}</td>
               <td class="num">${numBR(r.colaboradores ? r.gratif / r.colaboradores : 0, 0)}</td>
               <td class="num">${numBR(atend, 1)}%</td>
               <td class="num" style="color:var(--azul)">${r.ajusteValor ? '+' + numBR(r.ajusteValor, 0) : '—'}</td>
@@ -2061,7 +2061,7 @@ function renderHistorico() {
               <td class="num">${numBR(k.ton, 1)}</td>
               <td class="num">${k.kmMed ? numBR(k.kmMed, 0) : '—'}</td>
               <td class="num">${numBR(k.sal)}</td>
-              <td class="num" style="font-weight:600;color:var(--verde-esc)">${numBR(k.gratif)}</td>
+              <td class="num" style="font-weight:600;color:var(--texto-forte)">${numBR(k.gratif)}</td>
               <td class="num">${numBR(k.tetoEfetivo ?? k.teto, 0)}${(k.tetoEfetivo ?? k.teto) < k.teto ? '<span class="tag-sem" style="margin-left:3px">pr</span>' : ''}</td>
               <td><div style="display:flex;align-items:center;gap:6px">
                 <div class="barra" style="width:70px"><i class="${k.atingPct > 1 ? 'acima' : ''}" style="width:${Math.min(100, (k.atingPct || 0) * 100)}%"></i></div>
@@ -2241,7 +2241,7 @@ function renderDados() {
                   <td>${brDate(f.periodo.inicio)} a ${brDate(f.periodo.fim)}</td>
                   <td class="num">${f.resumo.colaboradores}</td>
                   <td class="num">${numBR(f.resumo.ton, 0)}</td>
-                  <td class="num" style="font-weight:600;color:var(--verde-esc)">${numBR(f.resumo.gratif, 0)}</td>
+                  <td class="num" style="font-weight:600;color:var(--texto-forte)">${numBR(f.resumo.gratif, 0)}</td>
                   <td class="num">${numBR(f.resumo.totalReceber, 0)}</td>
                   <td class="tag-sem">${esc((f.fechadoEm || '').slice(0, 10).split('-').reverse().join('/'))} por ${esc(f.fechadoPor || '—')}</td>
                 </tr>`).join('')}</tbody>
