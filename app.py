@@ -563,6 +563,58 @@ def detalhe_fechamento(inicio, fim):
     return jsonify(registro)
 
 
+@app.route("/api/fechamentos/<inicio>/<fim>/enriquecer", methods=["POST"])
+@requer_papel("gerente", "diretoria")
+def enriquecer_fechamento(inicio, fim):
+    """Completa um periodo ja fechado com o detalhe que o snapshot antigo nao
+    guardava (semanas, frotas, faltas), recalculando a partir das pesagens
+    reimportadas.
+
+    NUNCA mexe no dinheiro: gratificacao, teto, % atingido, ajuste manual e
+    total a receber continuam sendo os valores congelados no fechamento. Isso
+    aqui so acrescenta a quebra que faltava pro extrato do historico."""
+    registro = data_store.get_fechamento(inicio, fim)
+    if not registro:
+        return jsonify({"error": "Período fechado não encontrado."}), 404
+
+    periodo_atual = data_store.get_periodo()
+    if periodo_atual["inicio"] != inicio or periodo_atual["fim"] != fim:
+        return jsonify({
+            "error": f"Ajuste o período de apuração para {inicio} a {fim} antes de completar o detalhe "
+                     "(o cálculo usa o período atual para montar as semanas)."
+        }), 400
+
+    resultado, d = _calcular_atual()
+    if resultado is None:
+        return jsonify({"error": "Período inválido."}), 400
+    if not d["pesagens"]:
+        return jsonify({"error": "Nenhuma pesagem carregada — reimporte a planilha do período antes."}), 400
+
+    por_mat = {str(k["mat"]): k for k in resultado["lista"]}
+    completados, sem_dados = 0, 0
+    for item in registro["colaboradores"]:
+        k = por_mat.get(str(item["mat"]))
+        if not k:
+            sem_dados += 1
+            continue
+        item["semanas"] = {str(idx): _semana_json(sem) for idx, sem in (k.get("semanas") or {}).items()}
+        item["frotas"] = k.get("frotas") or {}
+        item["faltas"] = k.get("faltas") or []
+        if item.get("kmMed") in (None, 0):
+            item["kmMed"] = k.get("kmMed")
+        if item.get("prodR$") in (None, 0):
+            item["prodR$"] = k.get("prodR$")
+        if not item.get("admissao") and isinstance(k.get("admissao"), date):
+            item["admissao"] = k["admissao"].isoformat()
+        completados += 1
+
+    registro["nSem"] = resultado["nSem"]
+    registro["detalheCompletadoEm"] = datetime.now().isoformat(timespec="seconds")
+    registro["detalheCompletadoPor"] = session["username"]
+    data_store.salvar_fechamento(registro)
+    return jsonify({"ok": True, "completados": completados, "semDados": sem_dados})
+
+
 @app.route("/api/fechamento", methods=["POST"])
 @requer_papel("diretoria")
 def fechar_periodo():

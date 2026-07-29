@@ -1735,6 +1735,20 @@ function renderHistorico() {
 
   const lista = historicoFiltrado();
   const departamentos = [...new Set(snap.colaboradores.map(k => k.departamento || 'Não informado'))].sort();
+  /* snapshots antigos foram gravados antes de o fechamento passar a guardar a
+     quebra semanal — da pra completar reimportando as pesagens do periodo */
+  const temDetalhe = snap.colaboradores.some(k => k.semanas && Object.keys(k.semanas).length);
+  const periodoBate = DADOS.periodo.inicio === snap.periodo.inicio && DADOS.periodo.fim === snap.periodo.fim;
+  const avisoDetalhe = temDetalhe ? '' : `
+    <div class="aviso alerta" style="margin-top:12px">
+      <b>Sem detalhe semanal.</b> Este período foi fechado antes do sistema passar a guardar a quebra por semana, as frotas e os dias sem expediente — por isso o extrato dele vem resumido.
+      ${podeAprovar() ? `Para completar: deixe o período de apuração em ${esc(rotuloPeriodo(snap.periodo))}, reimporte a planilha de pesagens desse mês na aba Dados e clique abaixo. Os valores de gratificação, teto, ajuste e total <b>não são recalculados</b> — continuam os que foram congelados no fechamento.
+        <div class="linha-form" style="margin:10px 0 0">
+          <button class="btn sec" id="btnCompletarDetalhe" ${periodoBate && DADOS.pesagens.length ? '' : 'disabled'}>Completar detalhe semanal</button>
+          ${!periodoBate ? `<span class="tag-sem">Período atual está em ${esc(rotuloPeriodo(DADOS.periodo))}.</span>`
+            : !DADOS.pesagens.length ? '<span class="tag-sem">Nenhuma pesagem carregada na aba Dados.</span>' : ''}
+        </div>` : ''}
+    </div>`;
   const resumo = lista.reduce((acc, k) => {
     acc.n++; acc.ton += k.ton || 0; acc.gratif += k.gratif || 0; acc.teto += k.tetoEfetivo ?? k.teto ?? 0;
     acc.totalReceber += k.totalReceber || 0; acc.ajusteValor += k.ajusteValor || 0;
@@ -1769,6 +1783,7 @@ function renderHistorico() {
           <button class="btn sec no-print" id="btnExportarHistorico">Exportar Excel</button>
         </div>
       </div>
+      ${avisoDetalhe}
       <div class="kpis" style="margin-top:12px">
         <div class="kpi"><div class="rot">Colaboradores</div><div class="val">${resumo.n}</div><div class="det">no filtro atual</div></div>
         <div class="kpi"><div class="rot">Toneladas</div><div class="val">${numBR(resumo.ton, 0)}</div><div class="det">no período</div></div>
@@ -1924,6 +1939,21 @@ function wireHistorico() {
   if (depto) depto.onchange = e => { f.departamento = e.target.value; render(); };
   const btnExp = $('#btnExportarHistorico');
   if (btnExp) btnExp.onclick = exportarHistoricoCsv;
+
+  const btnCompletar = $('#btnCompletarDetalhe');
+  if (btnCompletar) btnCompletar.onclick = async () => {
+    const p = FECHAMENTO_DETALHE.periodo;
+    if (!confirm(`Completar o detalhe semanal de ${rotuloPeriodo(p)} usando as pesagens carregadas agora?\n\n` +
+      `Só serão acrescentadas as semanas, frotas e faltas. Gratificação, teto, ajuste e total continuam os valores congelados no fechamento.`)) return;
+    setBtnLoading(btnCompletar, true);
+    try {
+      const r = await api(`/fechamentos/${p.inicio}/${p.fim}/enriquecer`, { method: 'POST' });
+      FECHAMENTO_DETALHE = null;
+      await carregarFechamentoDetalhe(f.chave);
+      render();
+      showToast('ok', `Detalhe completado para ${r.completados} colaborador${r.completados > 1 ? 'es' : ''}${r.semDados ? ` · ${r.semDados} sem correspondência nas pesagens` : ''}.`);
+    } catch (e) { showToast('erro', e.message); setBtnLoading(btnCompletar, false); }
+  };
 
   $('#main').querySelectorAll('[data-verperiodo]').forEach(tr => {
     tr.onclick = async () => {
