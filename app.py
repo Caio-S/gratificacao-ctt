@@ -584,12 +584,18 @@ def fechar_periodo():
         return jsonify({"error": "Não há gratificação calculada neste período para fechar."}), 400
 
     aprovacoes = data_store.listar_aprovacoes_gratificacao(periodo["inicio"], periodo["fim"])
+    # guarda tambem semanas/frotas/faltas pra o extrato do periodo fechado ficar
+    # tao completo quanto o do periodo corrente
     campos = ("mat", "nome", "funcao", "departamento", "espec", "viagens", "ton", "kmMed", "sal",
               "gratif", "teto", "tetoEfetivo", "atingPct", "ajustePct", "ajusteObs", "ajusteValor",
-              "totalReceber", "diasPeriodo", "diasTrabalhados", "diasTrabalhadosReal")
+              "totalReceber", "diasPeriodo", "diasTrabalhados", "diasTrabalhadosReal",
+              "prodR$", "frotas", "faltas", "admissao")
     colaboradores = []
     for k in linhas:
         item = {c: k.get(c) for c in campos}
+        if isinstance(item.get("admissao"), date):
+            item["admissao"] = item["admissao"].isoformat()
+        item["semanas"] = {str(idx): _semana_json(sem) for idx, sem in (k.get("semanas") or {}).items()}
         ap = aprovacoes.get(str(k["mat"])) or {}
         item["aprovadoGerentePor"] = ap.get("aprovado_gerente_por")
         item["aprovadoDiretoriaPor"] = ap.get("aprovado_diretoria_por")
@@ -609,6 +615,7 @@ def fechar_periodo():
     registro = {
         "periodo": periodo,
         "diasBase": d["dias_base"],
+        "nSem": resultado["nSem"],
         "fechadoEm": datetime.now().isoformat(timespec="seconds"),
         "fechadoPor": session["username"],
         "parametros": d["parametros"],

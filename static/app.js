@@ -45,6 +45,7 @@ const state = {
   /* soComValor liga por padrao: a aprovacao so faz sentido pra quem tem valor
      a pagar — sem isso a lista vem com centenas de linhas zeradas */
   filtroAprovacoes: { busca: '', especialidade: 'TODOS', departamento: 'TODOS', soComAjuste: false, soComValor: true },
+  filtroHistorico: { chave: null, busca: '', especialidade: 'TODOS', departamento: 'TODOS', matExtrato: null },
   extratoRelatorioModalAberto: false,
   extratoRelatorioIntervalo: null,
   faltasModalMat: null,
@@ -59,6 +60,11 @@ let GRATIF_APROVACOES = {};
 /* periodos ja fechados (so os totais — o detalhe por colaborador fica guardado
    no backend e sera a base da tela de acompanhamento por mes) */
 let FECHAMENTOS = [];
+/* snapshot do periodo fechado que esta aberto na tela de Historico */
+let FECHAMENTO_DETALHE = null;
+
+const chavePeriodo = p => `${p.inicio}_${p.fim}`;
+const rotuloPeriodo = p => `${brDate(p.inicio)} a ${brDate(p.fim)}`;
 
 async function api(path, opts) {
   const res = await fetch('/api' + path, opts);
@@ -153,6 +159,13 @@ async function carregarUsuarios() {
 
 async function carregarFechamentos() {
   FECHAMENTOS = await api('/fechamentos');
+}
+
+async function carregarFechamentoDetalhe(chave) {
+  if (!chave) { FECHAMENTO_DETALHE = null; return; }
+  if (FECHAMENTO_DETALHE && chavePeriodo(FECHAMENTO_DETALHE.periodo) === chave) return;
+  const [inicio, fim] = chave.split('_');
+  FECHAMENTO_DETALHE = await api(`/fechamentos/${inicio}/${fim}`);
 }
 
 function renderPreservandoFoco() {
@@ -253,8 +266,16 @@ async function setView(v) {
   if (v === 'usuarios') {
     try { await carregarUsuarios(); } catch (e) { showAviso('erro', 'Falha ao carregar usuários: ' + e.message); }
   }
-  if (v === 'dados') {
+  if (v === 'dados' || v === 'historico') {
     try { await carregarFechamentos(); } catch (e) { showAviso('erro', 'Falha ao carregar fechamentos: ' + e.message); }
+  }
+  if (v === 'historico') {
+    const f = state.filtroHistorico;
+    if (!f.chave && FECHAMENTOS.length) f.chave = chavePeriodo(FECHAMENTOS[0].periodo);
+    if (f.chave) {
+      $('#main').innerHTML = '<div class="cartao"><div class="dica">Carregando período…</div></div>';
+      try { await carregarFechamentoDetalhe(f.chave); } catch (e) { showAviso('erro', 'Falha ao carregar o período: ' + e.message); }
+    }
   }
   render();
 }
@@ -265,10 +286,10 @@ $('#chkNomes').onchange = e => { state.exibirNomes = e.target.checked; render();
 function render() {
   const render_fn = { dados: renderDados, parametros: renderParametros, calculo: renderCalculo,
     semanal: renderSemanal, diretoria: renderDiretoria, extrato: renderExtrato,
-    aprovacoes: renderAprovacoes, usuarios: renderUsuarios }[state.view];
+    historico: renderHistorico, aprovacoes: renderAprovacoes, usuarios: renderUsuarios }[state.view];
   $('#main').innerHTML = render_fn ? render_fn() : '';
   const wire_fn = { dados: wireDados, parametros: wireParametros, calculo: wireCalculo, semanal: wireSemanal, diretoria: wireDiretoria, extrato: wireExtrato,
-    aprovacoes: wireAprovacoes, usuarios: wireUsuarios }[state.view];
+    historico: wireHistorico, aprovacoes: wireAprovacoes, usuarios: wireUsuarios }[state.view];
   if (wire_fn) wire_fn();
 }
 
@@ -1644,6 +1665,283 @@ function wireUsuarios() {
   });
 }
 
+/* =============== aba: historico (periodos fechados) =============== */
+function historicoFiltrado() {
+  const f = state.filtroHistorico;
+  const lista = (FECHAMENTO_DETALHE && FECHAMENTO_DETALHE.colaboradores) || [];
+  return lista.filter(k =>
+    (f.especialidade === 'TODOS' || k.espec === f.especialidade) &&
+    (f.departamento === 'TODOS' || (k.departamento || 'Não informado') === f.departamento) &&
+    (!f.busca || norm(k.nome).includes(norm(f.busca)) || String(k.mat).includes(f.busca))
+  );
+}
+
+function renderEvolucaoPeriodos() {
+  if (!FECHAMENTOS.length) return '';
+  /* ordem cronologica pra evolucao ser lida da esquerda pra direita */
+  const ordem = [...FECHAMENTOS].sort((a, b) => a.periodo.inicio.localeCompare(b.periodo.inicio));
+  const maxGratif = Math.max(1, ...ordem.map(f => f.resumo.gratif));
+  return `
+    <div class="cartao">
+      <h2>Evolução por período</h2>
+      <div class="dica">Gratificação total de cada período já fechado.</div>
+      <div class="colunas" style="height:150px">
+        ${ordem.map(f => `
+          <div class="col" title="${esc(rotuloPeriodo(f.periodo))}">
+            <div class="v">${numBR(f.resumo.gratif / 1000, 0)}k</div>
+            <i style="height:${Math.max(3, 100 * f.resumo.gratif / maxGratif)}%"></i>
+            <div class="lab">${esc(brDate(f.periodo.inicio).slice(3))}</div>
+          </div>`).join('')}
+      </div>
+      <div class="scroll-x" style="margin-top:16px">
+        <table>
+          <thead><tr>
+            <th>Período</th><th class="num">Colaboradores</th><th class="num">Toneladas</th><th class="num">Viagens</th>
+            <th class="num">Gratificação (R$)</th><th class="num">Média/colab. (R$)</th><th class="num">Atingimento</th>
+            <th class="num">Ajustes (R$)</th><th class="num">Salário + gratif. (R$)</th><th>Fechado</th>
+          </tr></thead>
+          <tbody>${[...FECHAMENTOS].map(f => {
+            const r = f.resumo;
+            const atend = r.teto > 0 ? 100 * r.gratif / r.teto : 0;
+            return `
+            <tr class="linha-clic" data-verperiodo="${esc(chavePeriodo(f.periodo))}">
+              <td><b>${esc(rotuloPeriodo(f.periodo))}</b></td>
+              <td class="num">${r.colaboradores}</td>
+              <td class="num">${numBR(r.ton, 0)}</td>
+              <td class="num">${r.viagens.toLocaleString('pt-BR')}</td>
+              <td class="num" style="font-weight:600;color:var(--verde-esc)">${numBR(r.gratif, 0)}</td>
+              <td class="num">${numBR(r.colaboradores ? r.gratif / r.colaboradores : 0, 0)}</td>
+              <td class="num">${numBR(atend, 1)}%</td>
+              <td class="num" style="color:var(--azul)">${r.ajusteValor ? '+' + numBR(r.ajusteValor, 0) : '—'}</td>
+              <td class="num">${numBR(r.totalReceber, 0)}</td>
+              <td class="tag-sem">${esc((f.fechadoEm || '').slice(0, 10).split('-').reverse().join('/'))} · ${esc(f.fechadoPor || '—')}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function renderHistorico() {
+  if (!FECHAMENTOS.length) {
+    return `<div class="cartao"><h2>Histórico</h2><div class="dica">Nenhum período fechado ainda. Feche um período na aba Dados para ele aparecer aqui.</div></div>`;
+  }
+  const f = state.filtroHistorico;
+  const snap = FECHAMENTO_DETALHE;
+  if (!snap) return renderEvolucaoPeriodos();
+
+  const lista = historicoFiltrado();
+  const departamentos = [...new Set(snap.colaboradores.map(k => k.departamento || 'Não informado'))].sort();
+  const resumo = lista.reduce((acc, k) => {
+    acc.n++; acc.ton += k.ton || 0; acc.gratif += k.gratif || 0; acc.teto += k.tetoEfetivo ?? k.teto ?? 0;
+    acc.totalReceber += k.totalReceber || 0; acc.ajusteValor += k.ajusteValor || 0;
+    return acc;
+  }, { n: 0, ton: 0, gratif: 0, teto: 0, totalReceber: 0, ajusteValor: 0 });
+  const atingMedio = resumo.teto > 0 ? 100 * resumo.gratif / resumo.teto : 0;
+
+  return `
+    ${renderEvolucaoPeriodos()}
+    <div class="cartao">
+      <div class="linha-form" style="justify-content:space-between">
+        <div>
+          <h2 style="margin:0">Período fechado — ${esc(rotuloPeriodo(snap.periodo))}</h2>
+          <div class="dica" style="margin:4px 0 0">Fechado em ${esc((snap.fechadoEm || '').slice(0, 10).split('-').reverse().join('/'))} por ${esc(snap.fechadoPor || '—')} · dias-base ${snap.diasBase}. Valores congelados: não mudam com importações novas.</div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <select id="histPeriodo">
+            ${FECHAMENTOS.map(x => `<option value="${esc(chavePeriodo(x.periodo))}" ${chavePeriodo(x.periodo) === f.chave ? 'selected' : ''}>${esc(rotuloPeriodo(x.periodo))}</option>`).join('')}
+          </select>
+          <input id="histBusca" placeholder="Buscar nome ou matrícula…" value="${esc(f.busca)}" style="width:200px">
+          <select id="histEspec">
+            <option value="TODOS" ${f.especialidade === 'TODOS' ? 'selected' : ''}>Todas especialidades</option>
+            <option value="CAMINHAO" ${f.especialidade === 'CAMINHAO' ? 'selected' : ''}>Caminhão canavieiro</option>
+            <option value="BATE-VOLTA" ${f.especialidade === 'BATE-VOLTA' ? 'selected' : ''}>Bate e volta</option>
+            <option value="COLHEDORA" ${f.especialidade === 'COLHEDORA' ? 'selected' : ''}>Operador colhedora</option>
+            <option value="TRANSBORDO" ${f.especialidade === 'TRANSBORDO' ? 'selected' : ''}>Operador transbordo</option>
+          </select>
+          <select id="histDepto">
+            <option value="TODOS" ${f.departamento === 'TODOS' ? 'selected' : ''}>Todos os departamentos</option>
+            ${departamentos.map(d => `<option value="${esc(d)}" ${f.departamento === d ? 'selected' : ''}>${esc(d)}</option>`).join('')}
+          </select>
+          <button class="btn sec no-print" id="btnExportarHistorico">Exportar Excel</button>
+        </div>
+      </div>
+      <div class="kpis" style="margin-top:12px">
+        <div class="kpi"><div class="rot">Colaboradores</div><div class="val">${resumo.n}</div><div class="det">no filtro atual</div></div>
+        <div class="kpi"><div class="rot">Toneladas</div><div class="val">${numBR(resumo.ton, 0)}</div><div class="det">no período</div></div>
+        <div class="kpi"><div class="rot">Gratificação (R$)</div><div class="val">${numBR(resumo.gratif, 0)}</div><div class="det">valor congelado</div></div>
+        <div class="kpi"><div class="rot">Atingimento médio</div><div class="val">${numBR(atingMedio, 1)}%</div><div class="det">R$ ${numBR(resumo.gratif, 0)} de R$ ${numBR(resumo.teto, 0)}</div></div>
+        <div class="kpi"><div class="rot">Média por colaborador (R$)</div><div class="val">${numBR(resumo.n ? resumo.gratif / resumo.n : 0, 0)}</div><div class="det">no filtro atual</div></div>
+        ${resumo.ajusteValor ? `<div class="kpi" style="border-top-color:var(--azul)"><div class="rot">Ajustes manuais (R$)</div><div class="val" style="color:var(--azul)">+${numBR(resumo.ajusteValor, 0)}</div><div class="det">já embutidos na gratificação</div></div>` : ''}
+        <div class="kpi"><div class="rot">Salário + gratificação</div><div class="val">${numBR(resumo.totalReceber, 0)}</div><div class="det">sem HE e DSR</div></div>
+      </div>
+      <div class="scroll-x tabela-calc">
+        <table style="width:1320px">
+          <thead><tr>
+            <th style="width:70px">Mat.</th><th style="width:170px">Colaborador</th><th style="width:160px">Departamento</th><th style="width:95px">Espec.</th>
+            <th class="num" style="width:70px">Viagens</th><th class="num" style="width:80px">Ton</th><th class="num" style="width:70px">Km méd.</th>
+            <th class="num" style="width:95px">Salário base</th><th class="num" style="width:100px">Gratificação (R$)</th>
+            <th class="num" style="width:80px">Teto (R$)</th><th style="width:110px">% Atingido</th><th class="num" style="width:95px">Total (R$)</th>
+            <th style="width:110px">Aprovações</th><th class="col-acoes" style="width:95px">Ações</th>
+          </tr></thead>
+          <tbody>${lista.length ? lista.map(k => `
+            <tr data-mat="${esc(k.mat)}">
+              <td class="mono">${esc(k.mat)}</td>
+              <td>${state.exibirNomes ? esc(k.nome) : `Colaborador ${esc(k.mat)}`}<div class="tag-sem">${esc(k.funcao || '')}</div></td>
+              <td class="tag-sem">${esc(k.departamento || 'Não informado')}</td>
+              <td>${badgeEspec(k.espec)}</td>
+              <td class="num">${k.viagens}</td>
+              <td class="num">${numBR(k.ton, 1)}</td>
+              <td class="num">${k.kmMed ? numBR(k.kmMed, 0) : '—'}</td>
+              <td class="num">${numBR(k.sal)}</td>
+              <td class="num" style="font-weight:600;color:var(--verde-esc)">${numBR(k.gratif)}</td>
+              <td class="num">${numBR(k.tetoEfetivo ?? k.teto, 0)}${(k.tetoEfetivo ?? k.teto) < k.teto ? '<span class="tag-sem" style="margin-left:3px">pr</span>' : ''}</td>
+              <td><div style="display:flex;align-items:center;gap:6px">
+                <div class="barra" style="width:70px"><i class="${k.atingPct > 1 ? 'acima' : ''}" style="width:${Math.min(100, (k.atingPct || 0) * 100)}%"></i></div>
+                <span class="mono" style="font-size:11.5px">${numBR((k.atingPct || 0) * 100, 1)}%</span>
+                ${k.ajustePct ? `<span class="tag-sem" style="color:var(--azul)" title="${esc(k.ajusteObs || '')}">+${numBR(k.ajustePct, 1)}%</span>` : ''}
+              </div></td>
+              <td class="num" style="font-weight:600">${numBR(k.totalReceber)}</td>
+              <td class="tag-sem">${k.aprovadoGerentePor ? `✓ ${esc(k.aprovadoGerentePor)}` : '— Gerente'}<br>${k.aprovadoDiretoriaPor ? `✓ ${esc(k.aprovadoDiretoriaPor)}` : '— Diretoria'}</td>
+              <td class="col-acoes"><button type="button" class="btn peq sec" data-histextrato="${esc(k.mat)}">📄 Extrato</button></td>
+            </tr>`).join('') : '<tr><td colspan="14" style="text-align:center;padding:24px;color:var(--muted)">Nenhum colaborador com esses filtros.</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>
+    ${renderHistoricoExtratoModal()}`;
+}
+
+function renderHistoricoExtratoModal() {
+  const mat = state.filtroHistorico.matExtrato;
+  if (!mat || !FECHAMENTO_DETALHE) return '';
+  const k = FECHAMENTO_DETALHE.colaboradores.find(x => String(x.mat) === String(mat));
+  if (!k) return '';
+  const snap = FECHAMENTO_DETALHE;
+  const teto = k.tetoEfetivo ?? k.teto;
+  const semanas = k.semanas || {};
+  const temSemanas = Object.keys(semanas).length > 0;
+  const frotas = Object.entries(k.frotas || {}).sort((a, b) => b[1].ton - a[1].ton);
+  return `
+    <div class="modal-ov no-print" id="histExtratoOv">
+      <div class="modal-box largo" id="histExtratoBox">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+          <div>
+            <h3>Extrato — ${esc(k.mat)}${state.exibirNomes ? ' · ' + esc(k.nome) : ''}</h3>
+            <div class="dica" style="margin:4px 0 0">${esc(rotuloPeriodo(snap.periodo))} · ${esc(k.funcao || '')} · ${esc(k.departamento || '')}</div>
+          </div>
+          <button class="modal-fecha" id="histExtratoFechar">×</button>
+        </div>
+        <div class="comp">
+          <div class="bloco">
+            <div class="r">Produção</div>
+            <div class="v">${numBR(k.ton, 1)} t</div>
+            <div class="d">${k.viagens} pesagens${k.kmMed ? ` · raio méd. ${numBR(k.kmMed, 0)} km` : ''}</div>
+          </div>
+          <div class="bloco">
+            <div class="r">Teto — ${brl(teto)}</div>
+            <div class="v" style="color:${k.atingPct >= 1 ? 'var(--ambar)' : 'var(--verde-esc)'}">${numBR((k.atingPct || 0) * 100, 1)}%</div>
+            <div class="barra" style="height:10px;margin:4px 0 6px"><i class="${k.atingPct > 1 ? 'acima' : ''}" style="width:${Math.min(100, (k.atingPct || 0) * 100)}%"></i></div>
+            ${teto < k.teto ? `<div class="d">Prorata: ${k.diasPeriodo} dias do período (teto cheio ${brl(k.teto)})</div>` : ''}
+          </div>
+          <div class="bloco total">
+            <div class="r">Total a receber</div>
+            <div class="v">${brl(k.totalReceber)}</div>
+            <div class="d">salário ${brl(k.sal)} + gratificação ${brl(k.gratif)}</div>
+          </div>
+        </div>
+        ${k.ajustePct ? `<div class="aviso alerta" style="margin-top:4px"><b>Ajuste manual de +${numBR(k.ajustePct, 1)}%</b> (${brl(k.ajusteValor || 0)}) — ${esc(k.ajusteObs || 'sem observação')}</div>` : ''}
+        <div class="linha-form" style="margin:6px 0 0">
+          <span class="tag-sem">Aprovações: ${k.aprovadoGerentePor ? `✓ Gerente (${esc(k.aprovadoGerentePor)})` : '— Gerente'} · ${k.aprovadoDiretoriaPor ? `✓ Diretoria (${esc(k.aprovadoDiretoriaPor)})` : '— Diretoria'}</span>
+        </div>
+        ${temSemanas ? `
+          <h3 style="margin-top:14px;font-size:15px">Por semana</h3>
+          <div class="scroll-x">
+            <table>
+              <thead><tr><th>Semana</th><th class="num">Viagens</th><th class="num">Toneladas</th><th class="num">Produção (R$)</th></tr></thead>
+              <tbody>${Object.entries(semanas).sort((a, b) => +a[0] - +b[0]).map(([idx, s]) => `
+                <tr><td>Sem ${+idx + 1}</td><td class="num">${s.viagens}</td><td class="num">${numBR(s.ton, 1)}</td><td class="num">${numBR(s.valor)}</td></tr>`).join('')}</tbody>
+            </table>
+          </div>` : '<div class="tag-sem" style="margin-top:12px">Detalhe semanal não disponível: este período foi fechado antes do snapshot passar a guardar essa quebra.</div>'}
+        ${frotas.length ? `
+          <h3 style="margin-top:14px;font-size:15px">Frotas</h3>
+          <div class="scroll-x">
+            <table>
+              <thead><tr><th>Frota</th><th class="num">Toneladas</th><th class="num">Viagens</th></tr></thead>
+              <tbody>${frotas.map(([cod, v]) => `<tr><td class="mono">${esc(cod)}</td><td class="num">${numBR(v.ton, 1)}</td><td class="num">${v.vg}</td></tr>`).join('')}</tbody>
+            </table>
+          </div>` : ''}
+        ${(k.faltas || []).length ? `
+          <h3 style="margin-top:14px;font-size:15px">Dias sem expediente</h3>
+          <div class="scroll-x">
+            <table>
+              <thead><tr><th>Dia</th><th>Motivo</th></tr></thead>
+              <tbody>${k.faltas.map(fa => `<tr><td>${brDate(fa.data)}</td><td>${esc(fa.motivo)}</td></tr>`).join('')}</tbody>
+            </table>
+          </div>` : ''}
+      </div>
+    </div>`;
+}
+
+function exportarHistoricoCsv() {
+  const snap = FECHAMENTO_DETALHE;
+  if (!snap) return;
+  const cab = ['Matrícula', ...(state.exibirNomes ? ['Nome'] : []), 'Função', 'Departamento', 'Especialidade',
+    'Viagens', 'Toneladas', 'Km méd.', 'Salário base R$', 'Gratificação R$', 'Teto R$', '% Atingido',
+    'Ajuste manual %', 'Observação do ajuste', 'Total a receber R$', 'Aprovado Gerente', 'Aprovado Diretoria'];
+  const linhas = [cab];
+  for (const k of historicoFiltrado()) {
+    linhas.push([k.mat, ...(state.exibirNomes ? [k.nome] : []), k.funcao || '', k.departamento || '', k.espec,
+      k.viagens, numBR(k.ton, 1), k.kmMed ? numBR(k.kmMed, 0) : '', numBR(k.sal), numBR(k.gratif),
+      numBR(k.tetoEfetivo ?? k.teto, 0), numBR((k.atingPct || 0) * 100, 1) + '%',
+      k.ajustePct ? numBR(k.ajustePct, 1) : '', k.ajusteObs || '', numBR(k.totalReceber),
+      k.aprovadoGerentePor || '', k.aprovadoDiretoriaPor || '']);
+  }
+  const csv = linhas.map(l => l.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(';')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = `gratificacao_${snap.periodo.inicio}_a_${snap.periodo.fim}.csv`;
+  a.click();
+}
+
+function wireHistorico() {
+  const f = state.filtroHistorico;
+  const sel = $('#histPeriodo');
+  if (sel) sel.onchange = async e => {
+    f.chave = e.target.value;
+    f.matExtrato = null;
+    $('#main').innerHTML = '<div class="cartao"><div class="dica">Carregando período…</div></div>';
+    try { await carregarFechamentoDetalhe(f.chave); } catch (err) { showToast('erro', err.message); }
+    render();
+  };
+  const busca = $('#histBusca');
+  if (busca) busca.oninput = e => { f.busca = e.target.value; renderPreservandoFoco(); };
+  const espec = $('#histEspec');
+  if (espec) espec.onchange = e => { f.especialidade = e.target.value; render(); };
+  const depto = $('#histDepto');
+  if (depto) depto.onchange = e => { f.departamento = e.target.value; render(); };
+  const btnExp = $('#btnExportarHistorico');
+  if (btnExp) btnExp.onclick = exportarHistoricoCsv;
+
+  $('#main').querySelectorAll('[data-verperiodo]').forEach(tr => {
+    tr.onclick = async () => {
+      f.chave = tr.dataset.verperiodo;
+      f.matExtrato = null;
+      try { await carregarFechamentoDetalhe(f.chave); } catch (err) { showToast('erro', err.message); }
+      render();
+    };
+  });
+  $('#main').querySelectorAll('[data-histextrato]').forEach(btn => {
+    btn.onclick = e => { e.stopPropagation(); f.matExtrato = btn.dataset.histextrato; render(); };
+  });
+  const ov = $('#histExtratoOv');
+  if (ov) {
+    const fechar = () => { f.matExtrato = null; render(); };
+    ov.onclick = fechar;
+    $('#histExtratoBox').onclick = e => e.stopPropagation();
+    $('#histExtratoFechar').onclick = fechar;
+  }
+}
+
 /* =============== aba: dados =============== */
 function renderDados() {
   const d = DADOS;
@@ -1923,7 +2221,7 @@ function renderUsuarioSessao() {
 function aplicarVisibilidadePorPapel() {
   const mostrar = {
     dados: true, parametros: podeAdministrar(), calculo: true, semanal: true, diretoria: true, extrato: true,
-    aprovacoes: podeAprovar(), usuarios: ehDiretoria(),
+    historico: true, aprovacoes: podeAprovar(), usuarios: ehDiretoria(),
   };
   document.querySelectorAll('.aba').forEach(b => { b.style.display = mostrar[b.dataset.v] === false ? 'none' : ''; });
 }
