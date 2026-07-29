@@ -11,6 +11,7 @@
   --sombra-modal:rgba(0,0,0,.3); --overlay-modal:rgba(18,61,39,.55);
   --destaque-linha-bg:#FBF0D5; --dourado:#F5C56B;
   --ajuste-bg:#EAF1FF; --ajuste-border:#B9D2F0;
+  --gooey-pill:#EDF1EA;
 }
 :root[data-tema="escuro"]{
   color-scheme:dark;
@@ -24,6 +25,7 @@
   --sombra-modal:rgba(0,0,0,.6); --overlay-modal:rgba(6,20,12,.7);
   --destaque-linha-bg:#4A3B14; --dourado:#F0C878;
   --ajuste-bg:#1B2A45; --ajuste-border:#2E4468;
+  --gooey-pill:#2E4A3A;
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg)}
@@ -57,12 +59,12 @@ body{margin:0;background:var(--bg)}
   pointer-events:none; z-index:1;
   filter:blur(7px) contrast(100) blur(0);
   mix-blend-mode:lighten;
-  --gooey-cor-1:var(--bg); --gooey-cor-2:var(--ambar); --gooey-cor-3:#fff; --gooey-cor-4:#A9C4B2;
+  --gooey-cor-1:var(--gooey-pill); --gooey-cor-2:var(--ambar); --gooey-cor-3:#fff; --gooey-cor-4:#A9C4B2;
 }
 .gooey-efeito::before{content:'';position:absolute;inset:-75px;z-index:-2;background:var(--verde-esc)}
 .gooey-efeito::after{
   content:''; position:absolute; inset:0; border-radius:100vw;
-  background:var(--bg); transform:scale(0); opacity:0; z-index:-1;
+  background:var(--gooey-pill); transform:scale(0); opacity:0; z-index:-1;
 }
 .gooey-efeito.ativo::after{animation:gooeyPilula .3s ease both}
 @keyframes gooeyPilula{to{transform:scale(1);opacity:1}}
