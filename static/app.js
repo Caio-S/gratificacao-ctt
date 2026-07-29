@@ -1,5 +1,25 @@
 'use strict';
 
+/* aplica o tema salvo antes de qualquer render, pra nao "piscar" claro
+   e so depois escurecer */
+(function iniciarTema() {
+  const salvo = localStorage.getItem('ctt-tema') || 'claro';
+  document.documentElement.setAttribute('data-tema', salvo);
+})();
+function alternarTema() {
+  const atual = document.documentElement.getAttribute('data-tema') === 'escuro' ? 'claro' : 'escuro';
+  document.documentElement.setAttribute('data-tema', atual);
+  localStorage.setItem('ctt-tema', atual);
+  atualizarBotaoTema();
+}
+function atualizarBotaoTema() {
+  const btn = document.getElementById('btnTema');
+  if (!btn) return;
+  const escuro = document.documentElement.getAttribute('data-tema') === 'escuro';
+  btn.innerHTML = icone(escuro ? 'sol' : 'lua');
+  btn.title = escuro ? 'Mudar para modo claro' : 'Mudar para modo escuro';
+}
+
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const brl = n => (Number(n) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -23,6 +43,21 @@ function tempoRelativo(iso) {
   if (h < 24) return `há ${h}h`;
   const d = Math.round(h / 24);
   return `há ${d} dia${d > 1 ? 's' : ''}`;
+}
+
+/* =============== icones (SVG inline, substituem emoji) =============== */
+const ICONES = {
+  documento: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/>',
+  engrenagem: '<circle cx="12" cy="12" r="3.2"/><line x1="12" y1="2.5" x2="12" y2="5.5"/><line x1="12" y1="18.5" x2="12" y2="21.5"/><line x1="2.5" y1="12" x2="5.5" y2="12"/><line x1="18.5" y1="12" x2="21.5" y2="12"/><line x1="5.1" y1="5.1" x2="7.2" y2="7.2"/><line x1="16.8" y1="16.8" x2="18.9" y2="18.9"/><line x1="18.9" y1="5.1" x2="16.8" y2="7.2"/><line x1="7.2" y1="16.8" x2="5.1" y2="18.9"/>',
+  lupa: '<circle cx="11" cy="11" r="7.5"/><line x1="21" y1="21" x2="16.4" y2="16.4"/>',
+  calendario: '<rect x="3" y="4.5" width="18" height="16" rx="2"/><line x1="16" y1="2.5" x2="16" y2="6.5"/><line x1="8" y1="2.5" x2="8" y2="6.5"/><line x1="3" y1="9.5" x2="21" y2="9.5"/>',
+  nota: '<path d="M3 21l1-4L16.5 4.5a2 2 0 0 1 2.83 0l.17.17a2 2 0 0 1 0 2.83L7 19l-4 2z"/><line x1="14.5" y1="6.5" x2="17.5" y2="9.5"/>',
+  cadeado: '<rect x="3.5" y="11" width="17" height="10.5" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  sol: '<circle cx="12" cy="12" r="4.5"/><line x1="12" y1="1.5" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22.5"/><line x1="4.2" y1="4.2" x2="6" y2="6"/><line x1="18" y1="18" x2="19.8" y2="19.8"/><line x1="1.5" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22.5" y2="12"/><line x1="4.2" y1="19.8" x2="6" y2="18"/><line x1="18" y1="6" x2="19.8" y2="4.2"/>',
+  lua: '<path d="M20.5 14.5A8.5 8.5 0 1 1 9.5 3.5a7 7 0 0 0 11 11z"/>',
+};
+function icone(nome) {
+  return `<svg class="icone-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONES[nome] || ''}</svg>`;
 }
 
 /* =============== estado =============== */
@@ -243,6 +278,19 @@ function setBtnLoading(btn, loading) {
   }
 }
 
+/* =============== impressao com rodape de documento oficial =============== */
+function imprimir() {
+  const rodape = document.querySelector('.rodape');
+  if (rodape) {
+    if (rodape.dataset.base === undefined) rodape.dataset.base = rodape.textContent;
+    const agora = new Date();
+    const dataHora = agora.toLocaleDateString('pt-BR') + ' às ' + agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const responsavel = USUARIO ? (USUARIO.nome || USUARIO.username) : '';
+    rodape.textContent = `${rodape.dataset.base} · Gerado em ${dataHora}${responsavel ? ' por ' + responsavel : ''}`;
+  }
+  window.print();
+}
+
 /* =============== aviso (banner fixo no topo do corpo) =============== */
 function showAviso(tipo, txt) {
   const el = $('#aviso');
@@ -252,18 +300,99 @@ function showAviso(tipo, txt) {
   el.style.display = 'block';
 }
 
+/* =============== animação "gooey" nas abas (GooeyNav, portado sem React) === */
+const GOOEY_PARTICULAS = 12;
+const GOOEY_DISTANCIAS = [80, 10];
+const GOOEY_RAIO = 100;
+const GOOEY_TEMPO_ANIM = 500;
+const GOOEY_VARIACAO_TEMPO = 200;
+const GOOEY_CORES = [1, 2, 3, 4, 1, 2];
+
+const _gooeyRuido = (n = 1) => n / 2 - Math.random() * n;
+
+function _gooeyPosicaoXY(distancia, indice, total) {
+  const angulo = ((360 + _gooeyRuido(8)) / total) * indice * (Math.PI / 180);
+  return [distancia * Math.cos(angulo), distancia * Math.sin(angulo)];
+}
+
+function _gooeyCriarParticula(i, t, d, r) {
+  const rotacao = _gooeyRuido(r / 10);
+  return {
+    start: _gooeyPosicaoXY(d[0], GOOEY_PARTICULAS - i, GOOEY_PARTICULAS),
+    end: _gooeyPosicaoXY(d[1] + _gooeyRuido(7), GOOEY_PARTICULAS - i, GOOEY_PARTICULAS),
+    time: t,
+    scale: 1 + _gooeyRuido(0.2),
+    cor: GOOEY_CORES[Math.floor(Math.random() * GOOEY_CORES.length)],
+    rotate: rotacao > 0 ? (rotacao + r / 20) * 10 : (rotacao - r / 20) * 10,
+  };
+}
+
+function _gooeyExplodirParticulas() {
+  const efeito = $('#gooeyEfeito');
+  if (!efeito) return;
+  efeito.querySelectorAll('.gooey-particula').forEach(p => efeito.removeChild(p));
+  efeito.classList.remove('ativo');
+  const tempoBolha = GOOEY_TEMPO_ANIM * 2 + GOOEY_VARIACAO_TEMPO;
+  efeito.style.setProperty('--tempo', `${tempoBolha}ms`);
+  for (let i = 0; i < GOOEY_PARTICULAS; i++) {
+    const t = GOOEY_TEMPO_ANIM * 2 + _gooeyRuido(GOOEY_VARIACAO_TEMPO * 2);
+    const p = _gooeyCriarParticula(i, t, GOOEY_DISTANCIAS, GOOEY_RAIO);
+    setTimeout(() => {
+      const particula = document.createElement('span');
+      const ponto = document.createElement('span');
+      particula.className = 'gooey-particula';
+      particula.style.setProperty('--start-x', `${p.start[0]}px`);
+      particula.style.setProperty('--start-y', `${p.start[1]}px`);
+      particula.style.setProperty('--end-x', `${p.end[0]}px`);
+      particula.style.setProperty('--end-y', `${p.end[1]}px`);
+      particula.style.setProperty('--tempo', `${p.time}ms`);
+      particula.style.setProperty('--scale', `${p.scale}`);
+      particula.style.setProperty('--cor', `var(--gooey-cor-${p.cor}, white)`);
+      particula.style.setProperty('--rotate', `${p.rotate}deg`);
+      ponto.className = 'gooey-ponto';
+      particula.appendChild(ponto);
+      efeito.appendChild(particula);
+      requestAnimationFrame(() => efeito.classList.add('ativo'));
+      setTimeout(() => { try { efeito.removeChild(particula); } catch (_) { /* ja removido */ } }, p.time);
+    }, 30);
+  }
+}
+
+function _gooeyAtualizarPosicao(botao) {
+  const container = $('#abas');
+  const efeito = $('#gooeyEfeito');
+  if (!container || !efeito || !botao) return;
+  const rectContainer = container.getBoundingClientRect();
+  const rectBotao = botao.getBoundingClientRect();
+  efeito.style.left = `${rectBotao.left - rectContainer.left}px`;
+  efeito.style.top = `${rectBotao.top - rectContainer.top}px`;
+  efeito.style.width = `${rectBotao.width}px`;
+  efeito.style.height = `${rectBotao.height}px`;
+}
+
+function wireGooeyNav() {
+  const container = $('#abas');
+  if (!container) return;
+  new ResizeObserver(() => {
+    const atual = container.querySelector('.aba.ativa');
+    if (atual) _gooeyAtualizarPosicao(atual);
+  }).observe(container);
+}
+
 /* =============== navegacao =============== */
 const VIEWS_QUE_USAM_CALCULO = new Set(['calculo', 'semanal', 'diretoria', 'extrato', 'aprovacoes']);
 async function setView(v) {
   state.view = v;
   document.querySelectorAll('.aba').forEach(b => b.classList.toggle('ativa', b.dataset.v === v));
+  const botaoAtivo = document.querySelector('.aba.ativa');
+  if (botaoAtivo) _gooeyAtualizarPosicao(botaoAtivo);
   showAviso(null);
   $('#corpo').classList.toggle('largo', v === 'calculo');
   /* no extrato de um periodo fechado tudo vem do snapshot — nao precisa (nem
      deve) rodar o calculo do periodo aberto */
   const extratoCongelado = v === 'extrato' && state.extratoFechamento;
   if (VIEWS_QUE_USAM_CALCULO.has(v) && !extratoCongelado) {
-    $('#main').innerHTML = '<div class="cartao"><div class="dica">Calculando…</div></div>';
+    $('#main').innerHTML = renderEsqueleto();
     try { await carregarCalculo(); } catch (e) { showAviso('erro', 'Falha ao calcular: ' + e.message); }
   }
   if (v === 'extrato') {
@@ -291,9 +420,26 @@ async function setView(v) {
   }
   render();
 }
-document.querySelectorAll('.aba').forEach(b => b.onclick = () => setView(b.dataset.v));
+document.querySelectorAll('.aba').forEach(b => b.onclick = () => {
+  if (!b.classList.contains('ativa')) { _gooeyAtualizarPosicao(b); _gooeyExplodirParticulas(); }
+  setView(b.dataset.v);
+});
+wireGooeyNav();
+wireBorderGlow();
+atualizarBotaoTema();
+$('#btnTema').onclick = alternarTema;
 
 $('#chkNomes').onchange = e => { state.exibirNomes = e.target.checked; render(); };
+
+function wireBorderGlow() {
+  document.body.addEventListener('pointermove', e => {
+    const alvo = e.target.closest('.cartao,.kpi');
+    if (!alvo) return;
+    const r = alvo.getBoundingClientRect();
+    alvo.style.setProperty('--glow-x', (e.clientX - r.left) + 'px');
+    alvo.style.setProperty('--glow-y', (e.clientY - r.top) + 'px');
+  });
+}
 
 function render() {
   const render_fn = { dados: renderDados, parametros: renderParametros, calculo: renderCalculo,
@@ -307,6 +453,23 @@ function render() {
 
 function placeholder(titulo) {
   return `<div class="cartao"><h2>${esc(titulo)}</h2><div class="dica">Em construção — chega nas próximas fases.</div></div>`;
+}
+
+function renderEsqueleto() {
+  const kpi = () => `
+    <div class="skel-kpi">
+      <span class="skel" style="width:65%"></span>
+      <span class="skel skel-grande"></span>
+      <span class="skel" style="width:45%"></span>
+    </div>`;
+  const larguras = [95, 82, 90, 70, 92, 78, 88, 65];
+  const linha = w => `<span class="skel skel-linha" style="width:${w}%"></span>`;
+  return `
+    <div class="skel-kpis">${kpi().repeat(5)}</div>
+    <div class="cartao">
+      <span class="skel skel-titulo"></span>
+      ${larguras.map(linha).join('')}
+    </div>`;
 }
 /* =============== aba: relatorio semanal =============== */
 /* De onde o extrato tira os dados: do periodo aberto (calculo ao vivo) ou do
@@ -431,7 +594,7 @@ function wireSemanal() {
   $('#semSemana').onchange = e => { f.semana = e.target.value; render(); };
   $('#semDepto').onchange = e => { f.departamento = e.target.value; render(); };
   $('#btnExportarCsvSemanal').onclick = exportarCsvSemanal;
-  $('#btnExportarSemanalPdf').onclick = () => window.print();
+  $('#btnExportarSemanalPdf').onclick = () => imprimir();
 }
 /* =============== aba: painel diretoria =============== */
 function resumoDiretoria() {
@@ -483,7 +646,7 @@ function renderDiretoria() {
       <div>
         <h2>Resumo executivo — Gratificação CTT</h2>
         <div class="per">Motoristas e operadores · ${brDate(DADOS.periodo.inicio)} a ${brDate(DADOS.periodo.fim)} · ${xe.n} colaboradores · <span class="mono">${xe.viagens.toLocaleString('pt-BR')}</span> pesagens</div>
-        <div style="margin-top:10px"><span class="sigilo">🔒 Sem identificação nominal — referência por matrícula</span></div>
+        <div style="margin-top:10px"><span class="sigilo">${icone('cadeado')} Sem identificação nominal — referência por matrícula</span></div>
         <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
           <select id="dirEspec" class="no-print">
             <option value="TODOS" ${f.especialidade === 'TODOS' ? 'selected' : ''}>Todas as especialidades</option>
@@ -581,7 +744,7 @@ function wireDiretoria() {
   const f = state.filtroDiretoria;
   $('#dirEspec').onchange = e => { f.especialidade = e.target.value; render(); };
   $('#dirDepto').onchange = e => { f.departamento = e.target.value; render(); };
-  $('#btnImprimirDiretoria').onclick = () => window.print();
+  $('#btnImprimirDiretoria').onclick = () => imprimir();
 }
 /* =============== aba: extrato colaborador =============== */
 /* Rk/Ck: tabela de referencia de ton/dia por faixa de km (so informativa, nao
@@ -712,7 +875,7 @@ function renderExtrato() {
       </div>
       <div style="display:flex;gap:8px">
         ${ctx.congelado ? '<button class="btn sec" id="btnVoltarHistorico">← Voltar ao histórico</button>' : ''}
-        <button class="btn sec" id="btnRelatorioDetalhado">📅 Relatório detalhado</button>
+        <button class="btn sec" id="btnRelatorioDetalhado">${icone('calendario')} Relatório detalhado</button>
         <button class="btn" id="btnImprimirExtrato">Imprimir extrato / PDF</button>
       </div>
     </div>
@@ -726,7 +889,7 @@ function renderExtrato() {
           <div class="tag-sem" style="margin-top:4px">${esc(especLabelFull)}${me.funcao ? ' · ' + esc(me.funcao) : ''}</div>
         </div>
         <div style="text-align:right">
-          <div style="font-family:'Barlow Condensed';font-weight:700;font-size:20px;color:var(--verde-esc);text-transform:uppercase;letter-spacing:.6px">Extrato de gratificação</div>
+          <div style="font-family:'Barlow Condensed';font-weight:700;font-size:20px;color:var(--texto-forte);text-transform:uppercase;letter-spacing:.6px">Extrato de gratificação</div>
           <div class="tag-sem">Período ${brDate(ctx.periodo.inicio)} a ${brDate(ctx.periodo.fim)}${me.dias != null ? ` · ${me.dias} de ${diasBase} dias trabalhados (base prorata)` : ''}</div>
         </div>
       </div>
@@ -739,7 +902,7 @@ function renderExtrato() {
         </div>
         <div class="bloco">
           <div class="r">Teto da gratificação — ${brl(tetoDe(me))}</div>
-          <div class="v" style="color:${me.atingPct >= 1 ? 'var(--ambar)' : 'var(--verde-esc)'}">${numBR(me.atingPct * 100, 1)}%</div>
+          <div class="v" style="color:${me.atingPct >= 1 ? 'var(--ambar)' : 'var(--texto-forte)'}">${numBR(me.atingPct * 100, 1)}%</div>
           <div class="barra" style="height:10px;margin:4px 0 6px"><i class="${me.atingPct > 1 ? 'acima' : ''}" style="width:${Math.min(100, me.atingPct * 100)}%"></i></div>
           ${tetoParcial(me) ? `<div class="d">Teto prorata: ${me.diasPeriodo} de ${diasNoPeriodo(ctx.periodo.inicio, ctx.periodo.fim)} dias do período (admissão em ${brDate(me.admissao)}) · teto cheio ${brl(me.teto)}</div>` : ''}
           ${me.atingPct >= 1
@@ -793,9 +956,9 @@ function renderExtrato() {
         </table>
       </div>
       ${me.ajustePct ? `
-      <div class="ajuste-aplicado" style="margin-top:14px;padding:12px 14px;background:#EAF1FF;border:1px solid #B9D2F0;border-radius:6px">
+      <div class="ajuste-aplicado" style="margin-top:14px;padding:12px 14px;background:var(--ajuste-bg);border:1px solid var(--ajuste-border);border-radius:6px">
         <div style="font-weight:700;font-size:13px;color:var(--azul);text-transform:uppercase;letter-spacing:.4px">Ajuste manual aplicado — +${numBR(me.ajustePct, 1)}%</div>
-        <div style="margin-top:4px;font-size:13px">${esc(me.ajusteObs || '')}</div>
+        <div style="margin-top:4px;font-size:13px;color:var(--ink)">${esc(me.ajusteObs || '')}</div>
       </div>` : ''}
       <div class="tag-sem" style="margin-top:12px">Documento individual de conferência do colaborador · produção valorizada por pesagem conforme tabela vigente (R$/t × faixa de km) · gratificação proporcional aos dias trabalhados (base ${diasBase}) · valores não incluem horas extras e DSR · fechamento no dia 15.</div>
     </div>
@@ -888,7 +1051,7 @@ function renderRelatorioDetalhado(me, referenciaDia) {
           <div class="tag-sem" style="margin-top:4px">${esc(especLabelFull)}${me.funcao ? ' · ' + esc(me.funcao) : ''}</div>
         </div>
         <div style="text-align:right">
-          <div style="font-family:'Barlow Condensed';font-weight:700;font-size:20px;color:var(--verde-esc);text-transform:uppercase;letter-spacing:.6px">Relatório detalhado</div>
+          <div style="font-family:'Barlow Condensed';font-weight:700;font-size:20px;color:var(--texto-forte);text-transform:uppercase;letter-spacing:.6px">Relatório detalhado</div>
           <div class="tag-sem">${rotuloPeriodo} · ${diasFiltrados.length} dia${diasFiltrados.length !== 1 ? 's' : ''} com produção</div>
         </div>
       </div>
@@ -920,7 +1083,7 @@ function wireExtrato() {
     const btnVoltar = $('#btnVoltarExtrato');
     if (btnVoltar) btnVoltar.onclick = () => { state.extratoRelatorioIntervalo = null; render(); };
     const btnImprimirRel = $('#btnImprimirRelatorioDetalhado');
-    if (btnImprimirRel) btnImprimirRel.onclick = () => window.print();
+    if (btnImprimirRel) btnImprimirRel.onclick = () => imprimir();
     return;
   }
   const selPeriodo = $('#extratoPeriodo');
@@ -943,7 +1106,7 @@ function wireExtrato() {
   const select = $('#extratoSelect');
   if (select) select.onchange = e => { state.extratoMat = e.target.value; state.extratoSemanaAberta = null; render(); };
   const btnImprimir = $('#btnImprimirExtrato');
-  if (btnImprimir) btnImprimir.onclick = () => window.print();
+  if (btnImprimir) btnImprimir.onclick = () => imprimir();
   const btnRelatorio = $('#btnRelatorioDetalhado');
   if (btnRelatorio) btnRelatorio.onclick = () => { state.extratoRelatorioModalAberto = true; render(); };
   $('#main').querySelectorAll('[data-semana-idx]').forEach(tr => {
@@ -1189,16 +1352,16 @@ function linhaCalculo(k) {
       <td>${badgeEspec(k.espec)}</td>
       <td class="num">${k.diasTrabalhados}</td>
       <td class="num">${k.diasTrabalhadosReal}${(k.faltas && k.faltas.length)
-        ? ` <button type="button" class="btn peq sec" data-faltas="${esc(k.mat)}" title="Ver dias sem expediente (folgas, atestados, feriados...)">🗓️ ${k.faltas.length}</button>`
+        ? ` <button type="button" class="btn peq sec" data-faltas="${esc(k.mat)}" title="Ver dias sem expediente (folgas, atestados, feriados...)">${icone('calendario')}${k.faltas.length}</button>`
         : ''}</td>
       <td class="num">${k.viagens}</td>
       <td class="num">${numBR(k.ton, 1)}</td>
       <td class="num">${k.kmMed ? numBR(k.kmMed, 0) : '—'}</td>
       <td style="white-space:nowrap">${frotasEntries.length
-        ? `<button type="button" class="btn peq sec" data-detalhe="${esc(k.mat)}">🔍 ${frotasEntries.length} frota${frotasEntries.length > 1 ? 's' : ''} ${aberto ? '▴' : '▾'}</button>`
+        ? `<button type="button" class="btn peq sec" data-detalhe="${esc(k.mat)}">${icone('lupa')}${frotasEntries.length} frota${frotasEntries.length > 1 ? 's' : ''} ${aberto ? '▴' : '▾'}</button>`
         : '—'}</td>
       <td class="num">${numBR(k.sal)}</td>
-      <td class="num" style="font-weight:600;color:var(--verde-esc)">${numBR(k.gratif)}</td>
+      <td class="num" style="font-weight:600;color:var(--texto-forte)">${numBR(k.gratif)}</td>
       <td class="num"${tetoParcial(k) ? ` title="Teto prorata: ${k.diasPeriodo} de ${diasNoPeriodo(DADOS.periodo.inicio, DADOS.periodo.fim)} dias do período (teto cheio R$ ${numBR(k.teto, 0)})"` : ''}>${numBR(tetoDe(k), 0)}${tetoParcial(k) ? '<span class="tag-sem" style="margin-left:3px">pr</span>' : ''}</td>
       <td><div style="display:flex;align-items:center;gap:6px">
         <div class="barra" style="width:80px"><i class="${k.atingPct > 1 ? 'acima' : ''}" style="width:${Math.min(100, k.atingPct * 100)}%"></i></div>
@@ -1207,9 +1370,9 @@ function linhaCalculo(k) {
       </div></td>
       <td class="num" style="font-weight:600">${numBR(k.totalReceber)}</td>
       <td class="col-acoes" style="white-space:nowrap">
-        <button type="button" class="btn peq sec" data-extrato="${esc(k.mat)}" title="Abrir extrato do colaborador">📄 Extrato</button>
-        ${podeAdministrar() ? `<button type="button" class="btn peq sec" data-ajuste="${esc(k.mat)}" title="Ajustar percentual manualmente">⚙️ Ajuste</button>` : ''}
-        ${podeSugerirAjuste() ? `<button type="button" class="btn peq sec" data-ajuste="${esc(k.mat)}" title="Sugerir ajuste (precisa de aprovação)">📝 Sugerir ajuste</button>` : ''}
+        <button type="button" class="btn peq sec" data-extrato="${esc(k.mat)}" title="Abrir extrato do colaborador">${icone('documento')}Extrato</button>
+        ${podeAdministrar() ? `<button type="button" class="btn peq sec" data-ajuste="${esc(k.mat)}" title="Ajustar percentual manualmente">${icone('engrenagem')}Ajuste</button>` : ''}
+        ${podeSugerirAjuste() ? `<button type="button" class="btn peq sec" data-ajuste="${esc(k.mat)}" title="Sugerir ajuste (precisa de aprovação)">${icone('nota')}Sugerir ajuste</button>` : ''}
       </td>
     </tr>`;
   if (!aberto) return linhaPrincipal;
@@ -1445,7 +1608,7 @@ function wireCalculo() {
     $('#faltasModalFechar').onclick = fecharFaltas;
   }
   const btnPdf = $('#btnExportarCalculoPdf');
-  if (btnPdf) btnPdf.onclick = () => window.print();
+  if (btnPdf) btnPdf.onclick = () => imprimir();
   const btnXlsx = $('#btnExportarCalculoXlsx');
   if (btnXlsx) btnXlsx.onclick = () => {
     const params = new URLSearchParams({
@@ -1807,7 +1970,7 @@ function renderEvolucaoPeriodos() {
               <td class="num">${r.colaboradores}</td>
               <td class="num">${numBR(r.ton, 0)}</td>
               <td class="num">${r.viagens.toLocaleString('pt-BR')}</td>
-              <td class="num" style="font-weight:600;color:var(--verde-esc)">${numBR(r.gratif, 0)}</td>
+              <td class="num" style="font-weight:600;color:var(--texto-forte)">${numBR(r.gratif, 0)}</td>
               <td class="num">${numBR(r.colaboradores ? r.gratif / r.colaboradores : 0, 0)}</td>
               <td class="num">${numBR(atend, 1)}%</td>
               <td class="num" style="color:var(--azul)">${r.ajusteValor ? '+' + numBR(r.ajusteValor, 0) : '—'}</td>
@@ -1907,7 +2070,7 @@ function renderHistorico() {
               <td class="num">${numBR(k.ton, 1)}</td>
               <td class="num">${k.kmMed ? numBR(k.kmMed, 0) : '—'}</td>
               <td class="num">${numBR(k.sal)}</td>
-              <td class="num" style="font-weight:600;color:var(--verde-esc)">${numBR(k.gratif)}</td>
+              <td class="num" style="font-weight:600;color:var(--texto-forte)">${numBR(k.gratif)}</td>
               <td class="num">${numBR(k.tetoEfetivo ?? k.teto, 0)}${(k.tetoEfetivo ?? k.teto) < k.teto ? '<span class="tag-sem" style="margin-left:3px">pr</span>' : ''}</td>
               <td><div style="display:flex;align-items:center;gap:6px">
                 <div class="barra" style="width:70px"><i class="${k.atingPct > 1 ? 'acima' : ''}" style="width:${Math.min(100, (k.atingPct || 0) * 100)}%"></i></div>
@@ -1916,7 +2079,7 @@ function renderHistorico() {
               </div></td>
               <td class="num" style="font-weight:600">${numBR(k.totalReceber)}</td>
               <td class="tag-sem">${k.aprovadoGerentePor ? `✓ ${esc(k.aprovadoGerentePor)}` : '— Gerente'}<br>${k.aprovadoDiretoriaPor ? `✓ ${esc(k.aprovadoDiretoriaPor)}` : '— Diretoria'}</td>
-              <td class="col-acoes"><button type="button" class="btn peq sec" data-histextrato="${esc(k.mat)}">📄 Extrato</button></td>
+              <td class="col-acoes"><button type="button" class="btn peq sec" data-histextrato="${esc(k.mat)}">${icone('documento')}Extrato</button></td>
             </tr>`).join('') : '<tr><td colspan="14" style="text-align:center;padding:24px;color:var(--muted)">Nenhum colaborador com esses filtros.</td></tr>'}</tbody>
         </table>
       </div>
@@ -2087,7 +2250,7 @@ function renderDados() {
                   <td>${brDate(f.periodo.inicio)} a ${brDate(f.periodo.fim)}</td>
                   <td class="num">${f.resumo.colaboradores}</td>
                   <td class="num">${numBR(f.resumo.ton, 0)}</td>
-                  <td class="num" style="font-weight:600;color:var(--verde-esc)">${numBR(f.resumo.gratif, 0)}</td>
+                  <td class="num" style="font-weight:600;color:var(--texto-forte)">${numBR(f.resumo.gratif, 0)}</td>
                   <td class="num">${numBR(f.resumo.totalReceber, 0)}</td>
                   <td class="tag-sem">${esc((f.fechadoEm || '').slice(0, 10).split('-').reverse().join('/'))} por ${esc(f.fechadoPor || '—')}</td>
                 </tr>`).join('')}</tbody>
