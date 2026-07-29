@@ -129,6 +129,7 @@ def get_calculo_inputs():
     valores = _get_many({
         "funcionarios": [], "pesagens": [], "dias_base": _DEFAULT_DIAS_BASE,
         "parametros": None, "ajustes": {}, "periodo": _DEFAULT_PERIODO, "jornada": {},
+        "dados_ate": None,
     })
     funcionarios = valores["funcionarios"]
     for f in funcionarios:
@@ -148,6 +149,7 @@ def get_calculo_inputs():
         "ajustes": valores["ajustes"],
         "periodo": valores["periodo"],
         "jornada": valores["jornada"],
+        "dados_ate": valores["dados_ate"],
     }
 
 
@@ -217,6 +219,16 @@ def get_periodo():
 
 def set_periodo(inicio, fim):
     _set("periodo", {"inicio": inicio, "fim": fim})
+
+
+def get_dados_ate():
+    """Ate que dia do periodo os dados importados vao, informado por quem
+    importou. Serve pra meta parcial acompanhar o andamento do mes."""
+    return _get("dados_ate", None)
+
+
+def set_dados_ate(iso):
+    _set("dados_ate", iso)
 
 
 def get_dias_base():
@@ -486,6 +498,9 @@ def limpar_base(base):
     _set(base, BASES_LIMPAVEIS[base])
     if base == "jornada":
         _set("jornada_import_status", {"status": "ocioso"})
+    elif base == "pesagens":
+        # sem pesagens nao ha ate-quando-vao-os-dados
+        _set("dados_ate", None)
 
 
 def limpar_tudo():

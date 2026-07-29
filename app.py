@@ -261,9 +261,30 @@ def get_dados():
         "frotas": d["frotas"],
         "periodo": d["periodo"],
         "diasBase": d["dias_base"],
+        "dadosAte": data_store.get_dados_ate(),
         "jornadaResumo": d["jornada_resumo"],
         "funcionariosAtualizadoEm": d["funcionarios_atualizado_em"],
     })
+
+
+@app.route("/api/dados-ate", methods=["PUT"])
+@requer_papel("coordenador", "gerente", "diretoria")
+def set_dados_ate():
+    """Ate que dia do periodo os dados importados vao. Quem importa e quem
+    sabe — a deducao automatica (ultima pesagem) fica so como reserva."""
+    payload = request.get_json(force=True)
+    valor = (payload.get("dadosAte") or "").strip() or None
+    if valor:
+        data = parse_data(valor)
+        periodo = data_store.get_periodo()
+        inicio, fim = parse_data(periodo["inicio"]), parse_data(periodo["fim"])
+        if not data:
+            return jsonify({"error": "Data inválida."}), 400
+        if inicio and fim and not (inicio <= data <= fim):
+            return jsonify({"error": f"A data precisa estar dentro do período ({brdata(periodo['inicio'])} a {brdata(periodo['fim'])})."}), 400
+        valor = data.isoformat()
+    data_store.set_dados_ate(valor)
+    return jsonify({"ok": True, "dadosAte": valor})
 
 
 @app.route("/api/dados", methods=["DELETE"])
@@ -350,6 +371,7 @@ def _calcular_atual():
         return None, d
     resultado = calculo.calcular(
         d["funcionarios"], d["pesagens"], inicio, fim, d["dias_base"], d["parametros"], d["ajustes"], d["jornada"],
+        parse_data(d.get("dados_ate")),
     )
     return resultado, d
 
@@ -365,6 +387,8 @@ def get_calculo():
         "nSem": resultado["nSem"],
         "parcial": resultado["parcial"],
         "dataCorte": resultado["dataCorte"],
+        "corteInformado": resultado["corteInformado"],
+        "ultimaPesagem": resultado["ultimaPesagem"],
         "diasDecorridos": resultado["diasDecorridos"],
         "diasPeriodoTotal": resultado["diasPeriodoTotal"],
     })

@@ -91,7 +91,7 @@ def _novo_agregado(base):
     }
 
 
-def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, parametros, ajustes=None, jornada=None):
+def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, parametros, ajustes=None, jornada=None, dados_ate=None):
     """Tt: agrega pesagens por colaborador e calcula a gratificacao de cada um.
     Devolve {"lista": [...], "nSem": N}."""
     ajustes = ajustes or {}
@@ -102,11 +102,16 @@ def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, par
     # ele esta EM ANDAMENTO: as metas passam a ser proporcionais aos dias ja
     # decorridos, senao no meio do mes todo mundo aparece abaixo da meta (a
     # meta cheia so faz sentido quando o mes inteiro entrou).
+    # Vale primeiro o que o usuario declarou na aba Dados ("dados importados
+    # ate"); sem isso, cai na ultima data de pesagem que entrou. O informado e
+    # mais confiavel: a planilha pode cobrir ate o dia 28 e o dia 28 nao ter
+    # nenhuma pesagem, o que faria a deducao automatica encurtar o periodo.
     datas_pesagens = [
         p["data"] for p in pesagens
         if p.get("data") and periodo_inicio and periodo_fim and periodo_inicio <= p["data"] <= periodo_fim
     ]
-    data_corte = max(datas_pesagens) if datas_pesagens else periodo_fim
+    corte_informado = dados_ate if (dados_ate and periodo_inicio and periodo_fim and periodo_inicio <= dados_ate <= periodo_fim) else None
+    data_corte = corte_informado or (max(datas_pesagens) if datas_pesagens else periodo_fim)
     periodo_parcial = bool(periodo_fim and data_corte < periodo_fim)
     # O DIVISOR e sempre o periodo cheio (ex.: 31 dias), porque e a ele que a
     # meta cheia corresponde. Quem encolhe e o numerador: os dias que o
@@ -306,6 +311,8 @@ def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, par
         "nSem": n_sem,
         "parcial": periodo_parcial,
         "dataCorte": data_corte.isoformat() if data_corte else None,
+        "corteInformado": bool(corte_informado),
+        "ultimaPesagem": max(datas_pesagens).isoformat() if datas_pesagens else None,
         "diasDecorridos": dias_decorridos,
         "diasPeriodoTotal": dias_periodo,
     }

@@ -1497,7 +1497,8 @@ function renderCalculo() {
   const parcial = CALC && CALC.parcial;
   const avisoParcial = parcial ? `
     <div class="aviso alerta no-print">
-      <b>Período em andamento.</b> Há pesagens até <b>${brDate(CALC.dataCorte)}</b> — ${CALC.diasDecorridos} de ${CALC.diasPeriodoTotal} dias do período.
+      <b>Período em andamento.</b> Dados até <b>${brDate(CALC.dataCorte)}</b> — ${CALC.diasDecorridos} de ${CALC.diasPeriodoTotal} dias do período
+      (${CALC.corteInformado ? 'informado na aba Dados' : `deduzido da última pesagem do arquivo — se a planilha vai além disso, informe a data na aba Dados`}).
       As metas abaixo são <b>proporcionais ao que já decorreu</b> (meta cheia ÷ ${CALC.diasPeriodoTotal} × ${CALC.diasDecorridos}), para o % atingido mostrar o ritmo real.
       A gratificação em si é o valor produzido até aqui e segue subindo até o fechamento.
     </div>` : '';
@@ -2214,6 +2215,14 @@ function renderDados() {
         <input type="file" id="f_pesagens" accept=".xlsx" style="display:none">
       </label>
       ${d.pesagens.length ? `<div class="tag-sem" style="margin-top:8px">${d.pesagens.length.toLocaleString('pt-BR')} pesagens carregadas.</div>` : ''}
+      <div class="linha-form" style="margin-top:12px;align-items:flex-end">
+        <div class="campo">
+          <label>Dados importados até</label>
+          <input type="date" id="f_dadosAte" min="${esc(d.periodo.inicio || '')}" max="${esc(d.periodo.fim || '')}" value="${esc(d.dadosAte || '')}">
+        </div>
+        <button class="btn sec" id="btnSalvarDadosAte">Salvar</button>
+      </div>
+      <div class="dica" style="margin-bottom:0">Até que dia do período esta planilha vai. Enquanto for antes de ${brDate(d.periodo.fim)}, as metas do Cálculo ficam proporcionais a esses dias, para o % atingido refletir o ritmo real. Em branco, o sistema deduz pela última pesagem do arquivo.</div>
       ${btnApagar('pesagens', 'pesagens', d.pesagens.length)}
     </div>
 
@@ -2340,6 +2349,21 @@ function wireDados() {
       } catch (e) { showToast('erro', e.message); setBtnLoading(btn, false); }
     };
   });
+
+  const btnDadosAte = $('#btnSalvarDadosAte');
+  if (btnDadosAte) btnDadosAte.onclick = async () => {
+    setBtnLoading(btnDadosAte, true);
+    try {
+      await api('/dados-ate', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dadosAte: $('#f_dadosAte').value }) });
+      await carregarDados();
+      CALC = null;
+      render();
+      showToast('ok', $('#f_dadosAte') && DADOS.dadosAte
+        ? `Metas do Cálculo passam a considerar os dados até ${brDate(DADOS.dadosAte)}.`
+        : 'Voltou a deduzir automaticamente pela última pesagem do arquivo.');
+    } catch (e) { showToast('erro', e.message); }
+    finally { setBtnLoading(btnDadosAte, false); }
+  };
 
   const btnFechar = $('#btnFecharPeriodo');
   if (btnFechar) btnFechar.onclick = async () => {
