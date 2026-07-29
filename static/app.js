@@ -403,8 +403,19 @@ document.querySelectorAll('.aba').forEach(b => b.onclick = () => {
   setView(b.dataset.v);
 });
 wireGooeyNav();
+wireBorderGlow();
 
 $('#chkNomes').onchange = e => { state.exibirNomes = e.target.checked; render(); };
+
+function wireBorderGlow() {
+  document.body.addEventListener('pointermove', e => {
+    const alvo = e.target.closest('.cartao,.kpi');
+    if (!alvo) return;
+    const r = alvo.getBoundingClientRect();
+    alvo.style.setProperty('--glow-x', (e.clientX - r.left) + 'px');
+    alvo.style.setProperty('--glow-y', (e.clientY - r.top) + 'px');
+  });
+}
 
 function render() {
   const render_fn = { dados: renderDados, parametros: renderParametros, calculo: renderCalculo,

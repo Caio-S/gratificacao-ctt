@@ -70,6 +70,17 @@ body{margin:0;background:var(--bg)}
 .cartao{background:var(--paper);border:1px solid var(--linha);border-radius:6px;padding:18px;margin-bottom:18px}
 .cartao h2{font-family:'Barlow Condensed';font-size:20px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin:0 0 4px;color:var(--verde-esc)}
 .cartao .dica{color:var(--muted);font-size:12.5px;margin-bottom:12px}
+
+.cartao,.kpi{position:relative}
+.cartao::before,.kpi::before{
+  content:'';position:absolute;inset:-1px;border-radius:inherit;padding:1px;pointer-events:none;z-index:1;
+  background:radial-gradient(240px circle at var(--glow-x,50%) var(--glow-y,50%),var(--verde) 0%,var(--ambar) 45%,transparent 75%);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;
+  opacity:0;transition:opacity .35s ease;
+}
+.cartao:hover::before,.kpi:hover::before{opacity:1}
+@media print{.cartao::before,.kpi::before{display:none}}
 table{border-collapse:collapse;width:100%}
 input[type=number]{-moz-appearance:textfield}
 input[type=number]::-webkit-outer-spin-button,input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
