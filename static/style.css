@@ -25,7 +25,7 @@
   --sombra-modal:rgba(0,0,0,.6); --overlay-modal:rgba(6,20,12,.7);
   --destaque-linha-bg:#4A3B14; --dourado:#F0C878;
   --ajuste-bg:#1B2A45; --ajuste-border:#2E4468;
-  --gooey-pill:#2E4A3A;
+  --gooey-pill:#EDF1EA;
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg)}
