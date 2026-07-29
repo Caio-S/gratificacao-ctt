@@ -1331,13 +1331,22 @@ function renderCalculo() {
     + `Transbordo: meta ${numBR(PARAMS.tetoTransbordo.metaDia, 0)} t/dia × ${diasBase} dias-base = ${numBR(PARAMS.tetoTransbordo.metaDia * diasBase, 0)} t · gratificação = % da meta × R$ ${numBR(PARAMS.tetoTransbordo.valor, 0)}. `
     + `Quem foi admitido durante o período tem o teto prorata aos dias corridos que pegou — teto do nível ÷ ${diasNoPeriodo(DADOS.periodo.inicio, DADOS.periodo.fim)} dias do período × dias do colaborador (marcado com "pr" na coluna Teto) — e o % atingido é medido contra esse teto.`;
 
+  const parcial = CALC && CALC.parcial;
+  const avisoParcial = parcial ? `
+    <div class="aviso alerta no-print">
+      <b>Período em andamento.</b> Há pesagens até <b>${brDate(CALC.dataCorte)}</b> — ${CALC.diasDecorridos} de ${CALC.diasPeriodoTotal} dias do período.
+      As metas abaixo são <b>proporcionais ao que já decorreu</b> (meta cheia ÷ ${CALC.diasPeriodoTotal} × ${CALC.diasDecorridos}), para o % atingido mostrar o ritmo real.
+      A gratificação em si é o valor produzido até aqui e segue subindo até o fechamento.
+    </div>` : '';
+
   return `
+    ${avisoParcial}
     <div class="kpis">
       <div class="kpi"><div class="rot">Colaboradores</div><div class="val">${resumo.n}</div><div class="det">${f.especialidade === 'TODOS' ? 'todas as especialidades' : ESPEC_LABEL[f.especialidade] || f.especialidade}</div></div>
       <div class="kpi"><div class="rot">Toneladas no período</div><div class="val">${numBR(resumo.ton, 0)}</div><div class="det">${resumo.viagens.toLocaleString('pt-BR')} viagens</div></div>
       <div class="kpi"><div class="rot">Gratificação (R$)</div><div class="val">${numBR(resumo.gratif, 0)}</div><div class="det">prorata base ${diasBase} dias</div></div>
-      <div class="kpi"><div class="rot">Meta gratificação (R$)</div><div class="val">${numBR(resumo.teto, 0)}</div><div class="det">tetos prorata por admissão · ${resumo.n} colaboradores</div></div>
-      <div class="kpi"><div class="rot">Atingimento médio</div><div class="val">${numBR(atingMedioPct, 1)}%</div><div class="det">R$ ${numBR(resumo.gratif, 0)} de R$ ${numBR(resumo.teto, 0)} da meta</div></div>
+      <div class="kpi"><div class="rot">Meta ${parcial ? 'até agora' : 'gratificação'} (R$)</div><div class="val">${numBR(resumo.teto, 0)}</div><div class="det">${parcial ? `proporcional a ${CALC.diasDecorridos} de ${CALC.diasPeriodoTotal} dias` : 'tetos prorata por admissão'} · ${resumo.n} colaboradores</div></div>
+      <div class="kpi"><div class="rot">Atingimento médio</div><div class="val">${numBR(atingMedioPct, 1)}%</div><div class="det">R$ ${numBR(resumo.gratif, 0)} de R$ ${numBR(resumo.teto, 0)}${parcial ? ' da meta até aqui' : ' da meta'}</div></div>
       <div class="kpi"><div class="rot">Média por colaborador (R$)</div><div class="val">${numBR(resumo.n ? resumo.gratif / resumo.n : 0, 0)}</div><div class="det">meta média R$ ${numBR(resumo.n ? resumo.teto / resumo.n : 0, 0)} por colaborador</div></div>
       ${resumo.ajusteValor ? `<div class="kpi" style="border-top-color:var(--azul)"><div class="rot">Ajustes manuais (R$)</div><div class="val" style="color:var(--azul)">+${numBR(resumo.ajusteValor, 0)}</div><div class="det">+${numBR(ajustePctSobreTotal, 1)}% sobre a gratificação sem ajustes</div></div>` : ''}
       <div class="kpi"><div class="rot">Folha salário base (R$)</div><div class="val">${numBR(resumo.sal, 0)}</div><div class="det">soma dos ${resumo.n} colaboradores</div></div>
@@ -2178,14 +2187,28 @@ function wireDados() {
       `• O período avança para o mês seguinte\n\n` +
       `Isso não pode ser desfeito pela tela.`)) return;
     setBtnLoading(btnFechar, true);
-    try {
-      const r = await api('/fechamento', { method: 'POST' });
+    const enviar = async confirmarParcial => {
+      const r = await api('/fechamento', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(confirmarParcial ? { confirmarParcial: true } : {}),
+      });
       await carregarDados();
       await carregarFechamentos();
       CALC = null;
       render();
       showToast('ok', `Período fechado: ${r.resumo.colaboradores} colaboradores e R$ ${numBR(r.resumo.gratif, 0)} salvos. Novo período: ${brDate(r.novoPeriodo.inicio)} a ${brDate(r.novoPeriodo.fim)}.`);
-    } catch (e) { showToast('erro', e.message); }
+    };
+    try {
+      await enviar(false);
+    } catch (e) {
+      /* o backend recusa fechar mes incompleto — so segue se a pessoa insistir
+         sabendo que as metas ficariam proporcionais ao que entrou */
+      if (/em andamento/i.test(e.message) && confirm(`${e.message}\n\nFechar assim mesmo? As metas congeladas ficarão proporcionais só aos dias já importados.`)) {
+        try { await enviar(true); } catch (e2) { showToast('erro', e2.message); }
+      } else {
+        showToast('erro', e.message);
+      }
+    }
     finally { setBtnLoading(btnFechar, false); }
   };
 

@@ -98,8 +98,23 @@ def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, par
     jornada = jornada or {}
     periodo_inicio_iso = periodo_inicio.isoformat() if periodo_inicio else None
     periodo_fim_iso = periodo_fim.isoformat() if periodo_fim else None
-    # dias corridos do periodo (ex.: 16/06 a 15/07 = 30) - base da meta parcial
+    # Ate onde os dados vao. Enquanto as pesagens nao chegam no fim do periodo,
+    # ele esta EM ANDAMENTO: as metas passam a ser proporcionais aos dias ja
+    # decorridos, senao no meio do mes todo mundo aparece abaixo da meta (a
+    # meta cheia so faz sentido quando o mes inteiro entrou).
+    datas_pesagens = [
+        p["data"] for p in pesagens
+        if p.get("data") and periodo_inicio and periodo_fim and periodo_inicio <= p["data"] <= periodo_fim
+    ]
+    data_corte = max(datas_pesagens) if datas_pesagens else periodo_fim
+    periodo_parcial = bool(periodo_fim and data_corte < periodo_fim)
+    # O DIVISOR e sempre o periodo cheio (ex.: 31 dias), porque e a ele que a
+    # meta cheia corresponde. Quem encolhe e o numerador: os dias que o
+    # colaborador pegou ate a data de corte. Assim, no meio do mes, a meta vira
+    # 1275 / 31 x 13 = 534 - e nao 1275 (o que aconteceria se o divisor tambem
+    # encolhesse, porque numerador e divisor se cancelariam).
     dias_corridos_periodo = (periodo_fim - periodo_inicio).days + 1 if periodo_inicio and periodo_fim else 0
+    dias_decorridos = (data_corte - periodo_inicio).days + 1 if periodo_inicio and data_corte else 0
     # a jornada guardada so vale se foi buscada pra este MESMO periodo de
     # apuracao (guarda so a contagem de dias, nao a lista - se o periodo
     # mudou sem re-buscar, os dados antigos nao servem pra esse recalculo).
@@ -262,7 +277,7 @@ def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, par
         # CORRIDOS do periodo que ele pegou (ex.: 1275 / 30 x 14 = 595), e e
         # contra ele que o % atingido e medido. k["teto"] continua sendo o teto
         # nominal do nivel - o ajuste manual segue calculado sobre ele.
-        k["diasPeriodo"] = _dias_corridos_no_periodo(k.get("admissao"), periodo_inicio, periodo_fim)
+        k["diasPeriodo"] = _dias_corridos_no_periodo(k.get("admissao"), periodo_inicio, data_corte)
         k["tetoEfetivo"] = k["teto"] * (k["diasPeriodo"] / dias_corridos_periodo) if dias_corridos_periodo else k["teto"]
         k["atingPct"] = gratif / k["tetoEfetivo"] if k["tetoEfetivo"] else 0
         entrada_jornada = jornada_por_mat.get(k["mat"]) or {}
@@ -286,4 +301,11 @@ def calcular(funcionarios, pesagens, periodo_inicio, periodo_fim, dias_base, par
     dias_periodo = (periodo_fim - periodo_inicio).days + 1 if periodo_inicio and periodo_fim else 0
     n_sem = math.ceil(dias_periodo / 7) if dias_periodo else 0
 
-    return {"lista": lista, "nSem": n_sem}
+    return {
+        "lista": lista,
+        "nSem": n_sem,
+        "parcial": periodo_parcial,
+        "dataCorte": data_corte.isoformat() if data_corte else None,
+        "diasDecorridos": dias_decorridos,
+        "diasPeriodoTotal": dias_periodo,
+    }

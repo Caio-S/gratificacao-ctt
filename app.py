@@ -363,6 +363,10 @@ def get_calculo():
     return jsonify({
         "lista": [_agregado_json(k) for k in resultado["lista"]],
         "nSem": resultado["nSem"],
+        "parcial": resultado["parcial"],
+        "dataCorte": resultado["dataCorte"],
+        "diasDecorridos": resultado["diasDecorridos"],
+        "diasPeriodoTotal": resultado["diasPeriodoTotal"],
     })
 
 
@@ -540,6 +544,11 @@ def listar_aprovacoes_gratificacao():
     return jsonify(resultado)
 
 
+def brdata(iso):
+    """2026-07-28 -> 28/07/2026, pra mensagem de erro sair legivel."""
+    return "/".join(reversed(iso.split("-"))) if iso else "—"
+
+
 def _proximo_periodo(fim):
     """O periodo seguinte comeca no dia seguinte ao fim e termina no mesmo dia
     do mes seguinte: 16/06-15/07 fecha e abre 16/07-15/08."""
@@ -634,6 +643,20 @@ def fechar_periodo():
     ]
     if not linhas:
         return jsonify({"error": "Não há gratificação calculada neste período para fechar."}), 400
+
+    # fechar no meio do mes congelaria metas proporcionais ao que ja entrou -
+    # so deixa passar se quem fechou souber disso e confirmar
+    payload = request.get_json(silent=True) or {}
+    if resultado["parcial"] and not payload.get("confirmarParcial"):
+        return jsonify({
+            "error": f"Período ainda em andamento: há pesagens só até {brdata(resultado['dataCorte'])} "
+                     f"({resultado['diasDecorridos']} de {resultado['diasPeriodoTotal']} dias). "
+                     "Importe o restante do mês antes de fechar.",
+            "parcial": True,
+            "dataCorte": resultado["dataCorte"],
+            "diasDecorridos": resultado["diasDecorridos"],
+            "diasPeriodoTotal": resultado["diasPeriodoTotal"],
+        }), 409
 
     aprovacoes = data_store.listar_aprovacoes_gratificacao(periodo["inicio"], periodo["fim"])
     # guarda tambem semanas/frotas/faltas pra o extrato do periodo fechado ficar
