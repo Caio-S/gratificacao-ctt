@@ -113,6 +113,17 @@ input[type=number]{font-family:'IBM Plex Mono';width:90px}
 .regua .fx:hover span{display:block}
 .legrua{display:flex;justify-content:space-between;font-family:'IBM Plex Mono';font-size:10px;color:var(--muted)}
 .mono{font-family:'IBM Plex Mono'}
+.icone-svg{width:14px;height:14px;vertical-align:-2.5px;margin-right:4px;flex-shrink:0}
+
+/* esqueleto de carregamento (substitui o "Calculando..." em texto) */
+.skel{display:block;border-radius:4px;background:linear-gradient(90deg,var(--linha) 25%,#F3F6F1 37%,var(--linha) 63%);background-size:400% 100%;animation:skelShimmer 1.4s ease infinite}
+@keyframes skelShimmer{0%{background-position:100% 0}100%{background-position:0 0}}
+.skel-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}
+.skel-kpi{background:var(--paper);border:1px solid var(--linha);border-top:3px solid var(--linha);border-radius:6px;padding:12px 14px}
+.skel-kpi .skel{height:10px;margin-bottom:10px;width:65%}
+.skel-kpi .skel.skel-grande{height:26px;width:50%;margin-bottom:8px}
+.skel-titulo{height:18px;width:230px;margin-bottom:16px}
+.skel-linha{height:13px;margin-bottom:11px}
 .rodape{color:var(--muted);font-size:11.5px;padding:8px 28px 24px;max-width:1280px;margin:0 auto}
 .scroll-x{overflow-x:auto}
 .scroll-x.tabela-calc{max-height:68vh;overflow-y:auto}
@@ -207,12 +218,13 @@ tr.linha-clic:hover td{background:#EAF1E7}
   .abas,.btn,.no-print,.aviso,input,select,.col-acoes{display:none!important}
   .app{background:#fff;min-height:0}
   html,body{height:auto;min-height:0}
-  .topo{padding:4px 20px 3px;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-  .topo h1{font-size:16px}
+  .topo{padding:6px 20px 4px;border-bottom:2px solid var(--ambar);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .topo h1{font-size:17px}
   .topo .sub{margin:1px 0 4px;font-size:9px}
-  .topo-linha{padding-bottom:3px;gap:10px}
-  .logo-crv{height:26px;padding:2px 6px}
+  .topo-linha{padding-bottom:4px;gap:10px}
+  .logo-crv{height:34px;padding:3px 8px}
   .corpo,.corpo.largo{padding:6px 0;max-width:100%}
+  .rodape{padding:6px 0 4px;margin-top:6px;border-top:1px solid var(--linha);font-size:9.5px}
   .cartao,.kpi,.hero-dir{break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .cartao{padding:8px 14px;margin-bottom:6px}
   .cartao h2{font-size:13px;margin:2px 0 2px}

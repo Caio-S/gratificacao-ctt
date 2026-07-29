@@ -25,6 +25,19 @@ function tempoRelativo(iso) {
   return `há ${d} dia${d > 1 ? 's' : ''}`;
 }
 
+/* =============== icones (SVG inline, substituem emoji) =============== */
+const ICONES = {
+  documento: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/>',
+  engrenagem: '<circle cx="12" cy="12" r="3.2"/><line x1="12" y1="2.5" x2="12" y2="5.5"/><line x1="12" y1="18.5" x2="12" y2="21.5"/><line x1="2.5" y1="12" x2="5.5" y2="12"/><line x1="18.5" y1="12" x2="21.5" y2="12"/><line x1="5.1" y1="5.1" x2="7.2" y2="7.2"/><line x1="16.8" y1="16.8" x2="18.9" y2="18.9"/><line x1="18.9" y1="5.1" x2="16.8" y2="7.2"/><line x1="7.2" y1="16.8" x2="5.1" y2="18.9"/>',
+  lupa: '<circle cx="11" cy="11" r="7.5"/><line x1="21" y1="21" x2="16.4" y2="16.4"/>',
+  calendario: '<rect x="3" y="4.5" width="18" height="16" rx="2"/><line x1="16" y1="2.5" x2="16" y2="6.5"/><line x1="8" y1="2.5" x2="8" y2="6.5"/><line x1="3" y1="9.5" x2="21" y2="9.5"/>',
+  nota: '<path d="M3 21l1-4L16.5 4.5a2 2 0 0 1 2.83 0l.17.17a2 2 0 0 1 0 2.83L7 19l-4 2z"/><line x1="14.5" y1="6.5" x2="17.5" y2="9.5"/>',
+  cadeado: '<rect x="3.5" y="11" width="17" height="10.5" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+};
+function icone(nome) {
+  return `<svg class="icone-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONES[nome] || ''}</svg>`;
+}
+
 /* =============== estado =============== */
 const state = {
   view: 'dados',
@@ -243,6 +256,19 @@ function setBtnLoading(btn, loading) {
   }
 }
 
+/* =============== impressao com rodape de documento oficial =============== */
+function imprimir() {
+  const rodape = document.querySelector('.rodape');
+  if (rodape) {
+    if (rodape.dataset.base === undefined) rodape.dataset.base = rodape.textContent;
+    const agora = new Date();
+    const dataHora = agora.toLocaleDateString('pt-BR') + ' às ' + agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const responsavel = USUARIO ? (USUARIO.nome || USUARIO.username) : '';
+    rodape.textContent = `${rodape.dataset.base} · Gerado em ${dataHora}${responsavel ? ' por ' + responsavel : ''}`;
+  }
+  window.print();
+}
+
 /* =============== aviso (banner fixo no topo do corpo) =============== */
 function showAviso(tipo, txt) {
   const el = $('#aviso');
@@ -344,7 +370,7 @@ async function setView(v) {
      deve) rodar o calculo do periodo aberto */
   const extratoCongelado = v === 'extrato' && state.extratoFechamento;
   if (VIEWS_QUE_USAM_CALCULO.has(v) && !extratoCongelado) {
-    $('#main').innerHTML = '<div class="cartao"><div class="dica">Calculando…</div></div>';
+    $('#main').innerHTML = renderEsqueleto();
     try { await carregarCalculo(); } catch (e) { showAviso('erro', 'Falha ao calcular: ' + e.message); }
   }
   if (v === 'extrato') {
@@ -392,6 +418,23 @@ function render() {
 
 function placeholder(titulo) {
   return `<div class="cartao"><h2>${esc(titulo)}</h2><div class="dica">Em construção — chega nas próximas fases.</div></div>`;
+}
+
+function renderEsqueleto() {
+  const kpi = () => `
+    <div class="skel-kpi">
+      <span class="skel" style="width:65%"></span>
+      <span class="skel skel-grande"></span>
+      <span class="skel" style="width:45%"></span>
+    </div>`;
+  const larguras = [95, 82, 90, 70, 92, 78, 88, 65];
+  const linha = w => `<span class="skel skel-linha" style="width:${w}%"></span>`;
+  return `
+    <div class="skel-kpis">${kpi().repeat(5)}</div>
+    <div class="cartao">
+      <span class="skel skel-titulo"></span>
+      ${larguras.map(linha).join('')}
+    </div>`;
 }
 /* =============== aba: relatorio semanal =============== */
 /* De onde o extrato tira os dados: do periodo aberto (calculo ao vivo) ou do
@@ -516,7 +559,7 @@ function wireSemanal() {
   $('#semSemana').onchange = e => { f.semana = e.target.value; render(); };
   $('#semDepto').onchange = e => { f.departamento = e.target.value; render(); };
   $('#btnExportarCsvSemanal').onclick = exportarCsvSemanal;
-  $('#btnExportarSemanalPdf').onclick = () => window.print();
+  $('#btnExportarSemanalPdf').onclick = () => imprimir();
 }
 /* =============== aba: painel diretoria =============== */
 function resumoDiretoria() {
@@ -568,7 +611,7 @@ function renderDiretoria() {
       <div>
         <h2>Resumo executivo — Gratificação CTT</h2>
         <div class="per">Motoristas e operadores · ${brDate(DADOS.periodo.inicio)} a ${brDate(DADOS.periodo.fim)} · ${xe.n} colaboradores · <span class="mono">${xe.viagens.toLocaleString('pt-BR')}</span> pesagens</div>
-        <div style="margin-top:10px"><span class="sigilo">🔒 Sem identificação nominal — referência por matrícula</span></div>
+        <div style="margin-top:10px"><span class="sigilo">${icone('cadeado')} Sem identificação nominal — referência por matrícula</span></div>
         <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
           <select id="dirEspec" class="no-print">
             <option value="TODOS" ${f.especialidade === 'TODOS' ? 'selected' : ''}>Todas as especialidades</option>
@@ -666,7 +709,7 @@ function wireDiretoria() {
   const f = state.filtroDiretoria;
   $('#dirEspec').onchange = e => { f.especialidade = e.target.value; render(); };
   $('#dirDepto').onchange = e => { f.departamento = e.target.value; render(); };
-  $('#btnImprimirDiretoria').onclick = () => window.print();
+  $('#btnImprimirDiretoria').onclick = () => imprimir();
 }
 /* =============== aba: extrato colaborador =============== */
 /* Rk/Ck: tabela de referencia de ton/dia por faixa de km (so informativa, nao
@@ -797,7 +840,7 @@ function renderExtrato() {
       </div>
       <div style="display:flex;gap:8px">
         ${ctx.congelado ? '<button class="btn sec" id="btnVoltarHistorico">← Voltar ao histórico</button>' : ''}
-        <button class="btn sec" id="btnRelatorioDetalhado">📅 Relatório detalhado</button>
+        <button class="btn sec" id="btnRelatorioDetalhado">${icone('calendario')} Relatório detalhado</button>
         <button class="btn" id="btnImprimirExtrato">Imprimir extrato / PDF</button>
       </div>
     </div>
@@ -1005,7 +1048,7 @@ function wireExtrato() {
     const btnVoltar = $('#btnVoltarExtrato');
     if (btnVoltar) btnVoltar.onclick = () => { state.extratoRelatorioIntervalo = null; render(); };
     const btnImprimirRel = $('#btnImprimirRelatorioDetalhado');
-    if (btnImprimirRel) btnImprimirRel.onclick = () => window.print();
+    if (btnImprimirRel) btnImprimirRel.onclick = () => imprimir();
     return;
   }
   const selPeriodo = $('#extratoPeriodo');
@@ -1028,7 +1071,7 @@ function wireExtrato() {
   const select = $('#extratoSelect');
   if (select) select.onchange = e => { state.extratoMat = e.target.value; state.extratoSemanaAberta = null; render(); };
   const btnImprimir = $('#btnImprimirExtrato');
-  if (btnImprimir) btnImprimir.onclick = () => window.print();
+  if (btnImprimir) btnImprimir.onclick = () => imprimir();
   const btnRelatorio = $('#btnRelatorioDetalhado');
   if (btnRelatorio) btnRelatorio.onclick = () => { state.extratoRelatorioModalAberto = true; render(); };
   $('#main').querySelectorAll('[data-semana-idx]').forEach(tr => {
@@ -1274,13 +1317,13 @@ function linhaCalculo(k) {
       <td>${badgeEspec(k.espec)}</td>
       <td class="num">${k.diasTrabalhados}</td>
       <td class="num">${k.diasTrabalhadosReal}${(k.faltas && k.faltas.length)
-        ? ` <button type="button" class="btn peq sec" data-faltas="${esc(k.mat)}" title="Ver dias sem expediente (folgas, atestados, feriados...)">🗓️ ${k.faltas.length}</button>`
+        ? ` <button type="button" class="btn peq sec" data-faltas="${esc(k.mat)}" title="Ver dias sem expediente (folgas, atestados, feriados...)">${icone('calendario')}${k.faltas.length}</button>`
         : ''}</td>
       <td class="num">${k.viagens}</td>
       <td class="num">${numBR(k.ton, 1)}</td>
       <td class="num">${k.kmMed ? numBR(k.kmMed, 0) : '—'}</td>
       <td style="white-space:nowrap">${frotasEntries.length
-        ? `<button type="button" class="btn peq sec" data-detalhe="${esc(k.mat)}">🔍 ${frotasEntries.length} frota${frotasEntries.length > 1 ? 's' : ''} ${aberto ? '▴' : '▾'}</button>`
+        ? `<button type="button" class="btn peq sec" data-detalhe="${esc(k.mat)}">${icone('lupa')}${frotasEntries.length} frota${frotasEntries.length > 1 ? 's' : ''} ${aberto ? '▴' : '▾'}</button>`
         : '—'}</td>
       <td class="num">${numBR(k.sal)}</td>
       <td class="num" style="font-weight:600;color:var(--verde-esc)">${numBR(k.gratif)}</td>
@@ -1292,9 +1335,9 @@ function linhaCalculo(k) {
       </div></td>
       <td class="num" style="font-weight:600">${numBR(k.totalReceber)}</td>
       <td class="col-acoes" style="white-space:nowrap">
-        <button type="button" class="btn peq sec" data-extrato="${esc(k.mat)}" title="Abrir extrato do colaborador">📄 Extrato</button>
-        ${podeAdministrar() ? `<button type="button" class="btn peq sec" data-ajuste="${esc(k.mat)}" title="Ajustar percentual manualmente">⚙️ Ajuste</button>` : ''}
-        ${podeSugerirAjuste() ? `<button type="button" class="btn peq sec" data-ajuste="${esc(k.mat)}" title="Sugerir ajuste (precisa de aprovação)">📝 Sugerir ajuste</button>` : ''}
+        <button type="button" class="btn peq sec" data-extrato="${esc(k.mat)}" title="Abrir extrato do colaborador">${icone('documento')}Extrato</button>
+        ${podeAdministrar() ? `<button type="button" class="btn peq sec" data-ajuste="${esc(k.mat)}" title="Ajustar percentual manualmente">${icone('engrenagem')}Ajuste</button>` : ''}
+        ${podeSugerirAjuste() ? `<button type="button" class="btn peq sec" data-ajuste="${esc(k.mat)}" title="Sugerir ajuste (precisa de aprovação)">${icone('nota')}Sugerir ajuste</button>` : ''}
       </td>
     </tr>`;
   if (!aberto) return linhaPrincipal;
@@ -1521,7 +1564,7 @@ function wireCalculo() {
     $('#faltasModalFechar').onclick = fecharFaltas;
   }
   const btnPdf = $('#btnExportarCalculoPdf');
-  if (btnPdf) btnPdf.onclick = () => window.print();
+  if (btnPdf) btnPdf.onclick = () => imprimir();
   const btnXlsx = $('#btnExportarCalculoXlsx');
   if (btnXlsx) btnXlsx.onclick = () => {
     const params = new URLSearchParams({
@@ -1992,7 +2035,7 @@ function renderHistorico() {
               </div></td>
               <td class="num" style="font-weight:600">${numBR(k.totalReceber)}</td>
               <td class="tag-sem">${k.aprovadoGerentePor ? `✓ ${esc(k.aprovadoGerentePor)}` : '— Gerente'}<br>${k.aprovadoDiretoriaPor ? `✓ ${esc(k.aprovadoDiretoriaPor)}` : '— Diretoria'}</td>
-              <td class="col-acoes"><button type="button" class="btn peq sec" data-histextrato="${esc(k.mat)}">📄 Extrato</button></td>
+              <td class="col-acoes"><button type="button" class="btn peq sec" data-histextrato="${esc(k.mat)}">${icone('documento')}Extrato</button></td>
             </tr>`).join('') : '<tr><td colspan="14" style="text-align:center;padding:24px;color:var(--muted)">Nenhum colaborador com esses filtros.</td></tr>'}</tbody>
         </table>
       </div>
