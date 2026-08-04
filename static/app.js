@@ -79,6 +79,9 @@ const state = {
      perder quem ja estava filtrado */
   filtroCalculo: { busca: '', buscasFixadas: [], apenasComProducao: true, especialidade: 'TODOS', departamento: 'TODOS', detalheAberto: null },
   filtroSemanal: { semana: 'TODAS', departamento: 'TODOS' },
+  /* null = periodo aberto; com a chave de um fechado, o relatorio semanal roda
+     sobre o snapshot congelado (pra exportar o PDF de divulgacao do mes) */
+  semanalFechamento: null,
   filtroDiretoria: { especialidade: 'TODOS', departamento: 'TODOS' },
   /* soComValor liga por padrao: a aprovacao so faz sentido pra quem tem valor
      a pagar — sem isso a lista vem com centenas de linhas zeradas */
@@ -279,7 +282,15 @@ function setBtnLoading(btn, loading) {
 }
 
 /* =============== impressao com rodape de documento oficial =============== */
-function imprimir() {
+function imprimir(periodo) {
+  /* num PDF de periodo fechado o cabecalho precisa mostrar AQUELE periodo, e
+     nao o de apuracao aberto — senao o documento sai com a data errada */
+  const sub = $('#subPeriodo');
+  const subOriginal = sub ? sub.textContent : null;
+  if (sub && periodo) {
+    sub.textContent = `Período de apuração: ${brDate(periodo.inicio)} a ${brDate(periodo.fim)} · ${diasNoPeriodo(periodo.inicio, periodo.fim)} dias`;
+    window.addEventListener('afterprint', () => { sub.textContent = subOriginal; }, { once: true });
+  }
   const rodape = document.querySelector('.rodape');
   if (rodape) {
     if (rodape.dataset.base === undefined) rodape.dataset.base = rodape.textContent;
@@ -390,15 +401,16 @@ async function setView(v) {
   $('#corpo').classList.toggle('largo', v === 'calculo');
   /* no extrato de um periodo fechado tudo vem do snapshot — nao precisa (nem
      deve) rodar o calculo do periodo aberto */
-  const extratoCongelado = v === 'extrato' && state.extratoFechamento;
-  if (VIEWS_QUE_USAM_CALCULO.has(v) && !extratoCongelado) {
+  const congelado = (v === 'extrato' && state.extratoFechamento) || (v === 'semanal' && state.semanalFechamento);
+  if (VIEWS_QUE_USAM_CALCULO.has(v) && !congelado) {
     $('#main').innerHTML = renderEsqueleto();
     try { await carregarCalculo(); } catch (e) { showAviso('erro', 'Falha ao calcular: ' + e.message); }
   }
-  if (v === 'extrato') {
+  if (v === 'extrato' || v === 'semanal') {
+    const chave = v === 'extrato' ? state.extratoFechamento : state.semanalFechamento;
     try {
       if (!FECHAMENTOS.length) await carregarFechamentos();
-      if (state.extratoFechamento) await carregarFechamentoDetalhe(state.extratoFechamento);
+      if (chave) await carregarFechamentoDetalhe(chave);
     } catch (e) { showAviso('erro', 'Falha ao carregar período fechado: ' + e.message); }
   }
   if (v === 'aprovacoes') {
@@ -475,11 +487,12 @@ function renderEsqueleto() {
 /* De onde o extrato tira os dados: do periodo aberto (calculo ao vivo) ou do
    snapshot de um periodo ja fechado. As duas telas usam o MESMO render — muda
    so a origem de lista/periodo/parametros/dias-base. */
-function contextoExtrato() {
+function contextoPeriodo(chaveFechamento) {
   const snap = FECHAMENTO_DETALHE;
-  if (state.extratoFechamento && snap && chavePeriodo(snap.periodo) === state.extratoFechamento) {
+  if (chaveFechamento && snap && chavePeriodo(snap.periodo) === chaveFechamento) {
     return {
       congelado: true,
+      snap,
       lista: snap.colaboradores,
       periodo: snap.periodo,
       nSem: snap.nSem || 0,
@@ -490,6 +503,7 @@ function contextoExtrato() {
   }
   return {
     congelado: false,
+    snap: null,
     lista: CALC ? CALC.lista : [],
     periodo: DADOS.periodo,
     nSem: CALC ? CALC.nSem : 0,
@@ -497,6 +511,15 @@ function contextoExtrato() {
     parametros: PARAMS,
     frotas: DADOS.frotas || [],
   };
+}
+const contextoExtrato = () => contextoPeriodo(state.extratoFechamento);
+const contextoSemanal = () => contextoPeriodo(state.semanalFechamento);
+
+/* seletor "periodo aberto / periodos fechados" compartilhado pelas telas que
+   sabem trabalhar em cima de um snapshot congelado */
+function opcoesPeriodo(selecionada) {
+  return `<option value="">Período aberto — ${esc(rotuloPeriodo(DADOS.periodo))}</option>`
+    + FECHAMENTOS.map(x => `<option value="${esc(chavePeriodo(x.periodo))}" ${chavePeriodo(x.periodo) === selecionada ? 'selected' : ''}>Fechado — ${esc(rotuloPeriodo(x.periodo))}</option>`).join('');
 }
 
 function semanasDoPeriodo(ctx) {
@@ -513,32 +536,34 @@ function semanasDoPeriodo(ctx) {
 }
 
 function exportarCsvSemanal() {
-  const yt = semanasDoPeriodo();
+  const ctx = contextoSemanal();
+  const yt = semanasDoPeriodo(ctx);
   const cabecalho = ['Matrícula', ...(state.exibirNomes ? ['Nome'] : []), 'Departamento', 'Especialidade',
     ...yt.map(s => `${s.rotulo} R$`), 'Ton total', 'Viagens', 'Salário base R$', 'Gratificação R$', 'Teto gratif. R$', '% Atingido', 'Total a receber R$'];
   const linhas = [cabecalho];
-  for (const k of (CALC ? CALC.lista : [])) {
+  for (const k of ctx.lista) {
     linhas.push([k.mat, ...(state.exibirNomes ? [k.nome] : []), k.departamento || 'Não informado', k.espec,
-      ...yt.map(s => numBR(k.semanas[String(s.idx)]?.valor || 0)), numBR(k.ton), k.viagens, numBR(k.sal), numBR(k.gratif), numBR(tetoDe(k)), numBR(k.atingPct * 100, 1) + '%', numBR(k.totalReceber)]);
+      ...yt.map(s => numBR((k.semanas || {})[String(s.idx)]?.valor || 0)), numBR(k.ton), k.viagens, numBR(k.sal), numBR(k.gratif), numBR(tetoDe(k)), numBR(k.atingPct * 100, 1) + '%', numBR(k.totalReceber)]);
   }
   const csv = linhas.map(l => l.map(v => `"${v}"`).join(';')).join('\n');
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `gratificacao_semanal_${DADOS.periodo.inicio}_a_${DADOS.periodo.fim}.csv`;
+  a.download = `gratificacao_semanal_${ctx.periodo.inicio}_a_${ctx.periodo.fim}.csv`;
   a.click();
 }
 
 function renderSemanal() {
-  if (!CALC) return placeholder('Relatório semanal');
+  const ctx = contextoSemanal();
+  if (!ctx.congelado && !CALC) return placeholder('Relatório semanal');
   const f = state.filtroSemanal;
-  const todasSemanas = semanasDoPeriodo();
+  const todasSemanas = semanasDoPeriodo(ctx);
   const semanasVisiveis = f.semana === 'TODAS' ? todasSemanas : todasSemanas.filter(s => String(s.idx) === f.semana);
-  const departamentos = [...new Set(CALC.lista.map(k => k.departamento || 'Não informado'))].sort();
-  const lista = CALC.lista.filter(k => k.viagens > 0 && (f.departamento === 'TODOS' || (k.departamento || 'Não informado') === f.departamento));
+  const departamentos = [...new Set(ctx.lista.map(k => k.departamento || 'Não informado'))].sort();
+  const lista = ctx.lista.filter(k => k.viagens > 0 && (f.departamento === 'TODOS' || (k.departamento || 'Não informado') === f.departamento));
 
   const linhas = lista.map(k => {
-    const metaSemanal = CALC.nSem ? tetoDe(k) / CALC.nSem : 0;
+    const metaSemanal = ctx.nSem ? tetoDe(k) / ctx.nSem : 0;
     const pctGratif = k.atingPct * 100;
     return `
       <tr>
@@ -547,7 +572,7 @@ function renderSemanal() {
         <td class="tag-sem">${esc(k.departamento || 'Não informado')}</td>
         <td>${badgeEspec(k.espec)}</td>
         ${semanasVisiveis.map(s => {
-          const sem = k.semanas[String(s.idx)];
+          const sem = (k.semanas || {})[String(s.idx)];
           if (!sem) return '<td class="num"><span style="color:var(--muted)">—</span></td>';
           const pct = metaSemanal ? sem.valor / metaSemanal * 100 : 0;
           return `<td class="num"><span style="font-weight:600${pct > 100 ? ';color:var(--ambar)' : ''}">${numBR(pct, 1)}%</span><div class="tag-sem">${numBR(sem.ton, 0)} t</div></td>`;
@@ -562,9 +587,10 @@ function renderSemanal() {
       <div class="linha-form" style="justify-content:space-between">
         <div>
           <h2 style="margin:0">Acompanhamento semanal</h2>
-          <div class="dica" style="margin:4px 0 0">% da gratificação de cada semana isolada (não acumulado), em relação à meta daquela semana (teto do período ÷ número de semanas) (${brDate(DADOS.periodo.inicio)} a ${brDate(DADOS.periodo.fim)}).</div>
+          <div class="dica" style="margin:4px 0 0">% da gratificação de cada semana isolada (não acumulado), em relação à meta daquela semana (teto do período ÷ número de semanas) (${brDate(ctx.periodo.inicio)} a ${brDate(ctx.periodo.fim)}).${ctx.congelado ? ` <b>Período fechado</b> em ${esc((ctx.snap.fechadoEm || '').slice(0, 10).split('-').reverse().join('/'))} — valores congelados.` : ''}</div>
         </div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <select id="semPeriodo">${opcoesPeriodo(state.semanalFechamento)}</select>
           <select id="semSemana">
             <option value="TODAS" ${f.semana === 'TODAS' ? 'selected' : ''}>Todas as semanas</option>
             ${todasSemanas.map(s => `<option value="${s.idx}" ${f.semana === String(s.idx) ? 'selected' : ''}>${s.rotulo} · ${s.faixa}</option>`).join('')}
@@ -591,10 +617,24 @@ function renderSemanal() {
 }
 function wireSemanal() {
   const f = state.filtroSemanal;
+  const selPeriodo = $('#semPeriodo');
+  if (selPeriodo) selPeriodo.onchange = async e => {
+    state.semanalFechamento = e.target.value || null;
+    f.semana = 'TODAS';
+    f.departamento = 'TODOS';
+    if (state.semanalFechamento) {
+      $('#main').innerHTML = renderEsqueleto();
+      try { await carregarFechamentoDetalhe(state.semanalFechamento); } catch (err) { showToast('erro', err.message); }
+    } else if (!CALC) {
+      $('#main').innerHTML = renderEsqueleto();
+      try { await carregarCalculo(); } catch (err) { showToast('erro', err.message); }
+    }
+    render();
+  };
   $('#semSemana').onchange = e => { f.semana = e.target.value; render(); };
   $('#semDepto').onchange = e => { f.departamento = e.target.value; render(); };
   $('#btnExportarCsvSemanal').onclick = exportarCsvSemanal;
-  $('#btnExportarSemanalPdf').onclick = () => imprimir();
+  $('#btnExportarSemanalPdf').onclick = () => imprimir(contextoSemanal().periodo);
 }
 /* =============== aba: painel diretoria =============== */
 function resumoDiretoria() {
