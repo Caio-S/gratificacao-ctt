@@ -292,8 +292,17 @@ tr.linha-clic:hover td{background:var(--hover-linha-clic)}
   .logo-crv{height:34px;padding:3px 8px}
   .corpo,.corpo.largo{padding:6px 0;max-width:100%}
   .rodape{padding:6px 0 4px;margin-top:6px;border-top:1px solid var(--linha);font-size:9.5px}
-  .cartao,.kpi,.hero-dir{break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .kpi,.hero-dir{break-inside:avoid;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  /* o cartao NAO pode ter break-inside:avoid: nas telas com tabela longa
+     (semanal, calculo, historico, aprovacoes) o bloco inteiro era empurrado
+     pra folha seguinte e a primeira saia praticamente em branco. Quem nao
+     pode rachar sao as linhas e os blocos do extrato, abaixo. */
+  .cartao{break-inside:auto;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .cartao{padding:8px 14px;margin-bottom:6px}
+  table{break-inside:auto}
+  thead{display:table-header-group}   /* cabecalho repete em toda pagina */
+  tr{break-inside:avoid}
+  .recibo-topo,.comp,.ajuste-aplicado,.kpis{break-inside:avoid}
   .cartao h2{font-size:13px;margin:2px 0 2px}
   .cartao .dica{font-size:9px;margin-bottom:3px}
   tr:hover td{background:transparent}
@@ -329,12 +338,6 @@ tr.linha-clic:hover td{background:var(--hover-linha-clic)}
      devem empilhar na impressao */
   .grade2{grid-template-columns:1fr 1fr!important}
 
-  /* relatorio detalhado (extrato) pode ter muitos dias (periodo todo) -
-     deixa a tabela quebrar entre paginas normalmente, so evitando quebrar
-     no meio de uma linha; sem isso o .cartao{break-inside:avoid} forcava
-     o bloco inteiro pra pagina seguinte e sobravam folhas em branco */
-  .cartao-relatorio{break-inside:auto}
-  .cartao-relatorio table{break-inside:auto}
-  .cartao-relatorio thead{display:table-header-group}
-  .cartao-relatorio tr{break-inside:avoid}
+  /* o antigo bloco .cartao-relatorio virou regra geral acima (todo cartao com
+     tabela longa pode quebrar entre paginas) */
 }
