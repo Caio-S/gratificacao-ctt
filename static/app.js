@@ -65,6 +65,7 @@ const state = {
   view: 'dados',
   exibirNomes: false,
   extratoMat: null,
+  extratoBusca: '',
   extratoSemanaAberta: null,
   /* null = extrato do periodo aberto; com a chave de um periodo fechado, a
      mesma tela roda em cima do snapshot congelado daquele mes */
@@ -802,15 +803,16 @@ function tonReferencia(km, tabelaNome) {
   return kmArred > tabela[tabela.length - 1].fim ? tabela[tabela.length - 1].ton : tabela[0].ton;
 }
 
-function seletorPeriodoExtrato() {
+function seletorPeriodoExtrato(ctx, termo) {
   return `
     <div class="linha-form no-print">
       <div class="campo">
         <label>Período</label>
-        <select id="extratoPeriodo" style="min-width:200px">
-          <option value="">Período aberto — ${esc(rotuloPeriodo(DADOS.periodo))}</option>
-          ${FECHAMENTOS.map(x => `<option value="${esc(chavePeriodo(x.periodo))}" ${chavePeriodo(x.periodo) === state.extratoFechamento ? 'selected' : ''}>Fechado — ${esc(rotuloPeriodo(x.periodo))}</option>`).join('')}
-        </select>
+        <select id="extratoPeriodo" style="min-width:200px">${opcoesPeriodo(state.extratoFechamento)}</select>
+      </div>
+      <div class="campo">
+        <label>Buscar colaborador</label>
+        <input id="extratoBusca" placeholder="Matrícula ou nome…" value="${esc(termo || state.extratoBusca)}" style="width:190px">
       </div>
       ${state.extratoFechamento ? '<button class="btn sec" id="btnVoltarHistorico">← Voltar ao histórico</button>' : ''}
     </div>`;
@@ -820,10 +822,18 @@ function renderExtrato() {
   const ctx = contextoExtrato();
   if (!ctx.congelado && !CALC) return placeholder('Extrato colaborador');
   const P = ctx.parametros;
-  const pe = ctx.lista.filter(k => k.viagens > 0);
+  const todos = ctx.lista.filter(k => k.viagens > 0);
+  /* busca livre por matricula ou nome: com centenas de colaboradores, rolar a
+     lista inteira e inviavel */
+  const termo = (state.extratoBusca || '').trim();
+  const pe = termo ? todos.filter(k => casaComTermo(k, termo)) : todos;
   const me = pe.find(k => String(k.mat) === String(state.extratoMat)) || pe[0];
   if (!me) {
-    return `${seletorPeriodoExtrato(ctx)}<div class="cartao"><h2>Extrato do colaborador</h2><div class="dica">${ctx.congelado ? 'Nenhum colaborador com produção registrada neste período fechado.' : 'Sem dados — importe as bases ou carregue a demonstração na aba Dados.'}</div></div>`;
+    /* sem resultado na busca nao pode cair no extrato de outra pessoa */
+    const msg = termo
+      ? `Nenhum colaborador com produção encontrado para “${esc(termo)}”. Limpe a busca ou tente outra matrícula/nome.`
+      : (ctx.congelado ? 'Nenhum colaborador com produção registrada neste período fechado.' : 'Sem dados — importe as bases ou carregue a demonstração na aba Dados.');
+    return `${seletorPeriodoExtrato(ctx, termo)}<div class="cartao"><h2>Extrato do colaborador</h2><div class="dica">${msg}</div></div>`;
   }
   const especCfg = (P.especialidades || []).find(e => e.chave === me.espec) || {};
   const tabelaNome = especCfg.tabela || 'canavieiro';
@@ -901,15 +911,18 @@ function renderExtrato() {
       <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end">
         <div class="campo">
           <label>Período</label>
-          <select id="extratoPeriodo" style="min-width:200px">
-            <option value="">Período aberto — ${esc(rotuloPeriodo(DADOS.periodo))}</option>
-            ${FECHAMENTOS.map(x => `<option value="${esc(chavePeriodo(x.periodo))}" ${chavePeriodo(x.periodo) === state.extratoFechamento ? 'selected' : ''}>Fechado — ${esc(rotuloPeriodo(x.periodo))}</option>`).join('')}
-          </select>
+          <select id="extratoPeriodo" style="min-width:200px">${opcoesPeriodo(state.extratoFechamento)}</select>
         </div>
         <div class="campo">
-          <label>Colaborador (matrícula)</label>
+          <label>Buscar colaborador</label>
+          <input id="extratoBusca" placeholder="Matrícula ou nome…" value="${esc(state.extratoBusca)}" style="width:190px">
+        </div>
+        <div class="campo">
+          <label>Colaborador (matrícula)${termo ? ` · ${pe.length} encontrado${pe.length === 1 ? '' : 's'}` : ''}</label>
           <select id="extratoSelect" style="min-width:260px">
-            ${pe.map(k => `<option value="${esc(k.mat)}" ${String(k.mat) === String(me.mat) ? 'selected' : ''}>${esc(k.mat)}${state.exibirNomes ? ' — ' + esc(k.nome) : ''} · ${ESPEC_LABEL[k.espec] || esc(k.espec)}</option>`).join('')}
+            ${pe.length
+              ? pe.map(k => `<option value="${esc(k.mat)}" ${String(k.mat) === String(me.mat) ? 'selected' : ''}>${esc(k.mat)}${state.exibirNomes ? ' — ' + esc(k.nome) : ''} · ${ESPEC_LABEL[k.espec] || esc(k.espec)}</option>`).join('')
+              : '<option value="">Nenhum colaborador encontrado</option>'}
           </select>
         </div>
       </div>
@@ -1142,6 +1155,14 @@ function wireExtrato() {
   if (btnVoltarHist) btnVoltarHist.onclick = () => {
     state.filtroHistorico.chave = state.extratoFechamento;
     setView('historico');
+  };
+  const busca = $('#extratoBusca');
+  if (busca) busca.oninput = e => {
+    /* nao zera o selecionado: se ele continuar batendo com a busca, permanece;
+       so quando sai do resultado e que o extrato pula pro primeiro da lista */
+    state.extratoBusca = e.target.value;
+    state.extratoSemanaAberta = null;
+    renderPreservandoFoco();
   };
   const select = $('#extratoSelect');
   if (select) select.onchange = e => { state.extratoMat = e.target.value; state.extratoSemanaAberta = null; render(); };
