@@ -826,7 +826,7 @@ function renderExtrato() {
   /* busca livre por matricula ou nome: com centenas de colaboradores, rolar a
      lista inteira e inviavel */
   const termo = (state.extratoBusca || '').trim();
-  const pe = termo ? todos.filter(k => casaComTermo(k, termo)) : todos;
+  const pe = termo ? ordenarPorRelevancia(todos.filter(k => casaComTermo(k, termo)), termo) : todos;
   const me = pe.find(k => String(k.mat) === String(state.extratoMat)) || pe[0];
   if (!me) {
     /* sem resultado na busca nao pode cair no extrato de outra pessoa */
@@ -1386,6 +1386,22 @@ function termosBuscaCalculo() {
   return [...(f.buscasFixadas || []), f.busca].map(t => String(t || '').trim()).filter(Boolean);
 }
 const casaComTermo = (k, t) => norm(k.nome).includes(norm(t)) || String(k.mat).includes(t);
+
+/* quem COMECA com o termo vem antes de quem so o contem — buscar "NIVALDO"
+   deve trazer NIVALDO DA SILVA na frente de GENIVALDO */
+function ordenarPorRelevancia(lista, termo) {
+  const t = norm(termo);
+  const peso = k => {
+    const mat = String(k.mat);
+    if (mat === termo) return 0;
+    if (mat.startsWith(termo)) return 1;
+    const nome = norm(k.nome);
+    if (nome.startsWith(t)) return 2;
+    if (nome.split(/\s+/).some(p => p.startsWith(t))) return 3;
+    return 4;
+  };
+  return [...lista].sort((a, b) => peso(a) - peso(b) || (b.gratif || 0) - (a.gratif || 0));
+}
 
 function calculoFiltrado() {
   const f = state.filtroCalculo;
